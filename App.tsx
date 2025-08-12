@@ -4,7 +4,7 @@ import React from 'react';
 import AquariumScreen from './screens/AquariumScreen';
 import DetailsScreen from './screens/DetailsScreen';
 import HomeScreen from './screens/HomeScreen';
-import ListScreen from './screens/ListScreeen';
+import ListScreen from './screens/ListScreen';
 
 
 const Stack = createNativeStackNavigator();
@@ -14,7 +14,7 @@ export default function App() {
     <NavigationContainer>
       <Stack.Navigator initialRouteName="Home">
         <Stack.Screen name="Home" component={HomeScreen} />
-        <Stack.Screen name="Aquarium" component={AquariumScreen} />
+        <Stack.Screen name="Aquarium" component={AquariumScreen} options={{ headerTransparent: true, title: '', headerShadowVisible: false,}}/>
         <Stack.Screen name="List" component={ListScreen} />
         <Stack.Screen name="Details" component={DetailsScreen} />
       </Stack.Navigator>
