@@ -1,10 +1,13 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Slider from '@react-native-community/slider';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import * as FileSystem from 'expo-file-system';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { collection, getDocs } from 'firebase/firestore';
-import React, { useRef, useState } from 'react';
-import { Animated, Easing, Image, Modal, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useMemo, useRef, useState } from 'react';
+import { Alert, Animated, Dimensions, Easing, Image, Modal, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import ViewShot from 'react-native-view-shot';
 import FishTank from '../assets/images/Fish-Tank.jpeg';
 import { db } from '../firebase.js';
 
@@ -18,14 +21,24 @@ const fishImages: Record<string, any> = {
 };
 const defaultFishImage = require('../assets/images/Default-Fish.png');
 
+// Left/right arrows will cycle this list.
+const tankBackgrounds = [
+  { key: 'default', src: FishTank, label: 'Default' },
+  { key: 'reef', src: require('../assets/images/Fish-Tank-Reef.jpeg'), label: 'Reef' },
+  { key: 'plants', src: require('../assets/images/Fish-Tank-Plants.jpeg'), label: 'Plants' },
+  { key: 'rocks', src: require('../assets/images/Fish-Tank-Rocks.jpeg'), label: 'Rocks' },
+];
+
 type Range = { min: number; max: number } | [number, number];
 type Oxygen = 'low' | 'medium' | 'high' | string;
+type WaterType = 'freshwater' | 'saltwater';
 
 type Species = {
   id: string;
   name: string;
-  type?: string;
-  ph?: Range;
+  kind?: 'fish' | 'plant';
+  type?: string; 
+  ph?: Range | number;
   temp?: Range;
   oxygenNeed?: Oxygen;
   assetKey?: string;
@@ -34,10 +47,12 @@ type Species = {
   [k: string]: any;
 };
 
+// per-item nickname (keeps species 'name' intact)
 type TankItem = Species & {
   instanceId: string; // unique per dropped item
   x: number;          // position inside the tank view
   y: number;
+  nickname?: string;  // personalized name shown in UI
 };
 
 //Sizes, safe area, etc.
@@ -46,6 +61,11 @@ const MENU_W = 300;
 const FISH_W = 160;
 const FISH_H = 110;
 const ANDROID_SAFE = Platform.OS === 'android' ? (StatusBar.currentHeight || 0) : 0;
+
+const BUBBLE_W = 220;
+const BUBBLE_DEFAULT_H = 120; // fallback until measured
+const RHYTHM = 12; // spacing
+const UI_EDGE_GAP = 12; // gap from screen edges & the left rail
 
 // "slug" = safe, lowercase id (spaces -> dashes).
 //Use this so names, ids, and asset keys match
@@ -65,42 +85,153 @@ const canonicalId = (s: Species | TankItem) => toSlug(s.assetKey || s.id || s.na
 //Some species we never allow duplicates of (e.g., bettas).
 const SELF_AVOID = new Set<string>(['betta']);
 
+type NameModalMode = 'create' | 'rename';
+const defaultNicknameFor = (sp: Species) => (sp?.name ? `${sp.name}` : 'New Fish');
+
 export default function AquariumScreen() {
+  const navigation = useNavigation<any>(); // for Details nav
   const insets = useSafeAreaInsets();
   const [speciesList, setSpeciesList] = useState<Species[]>([]);
   const [tankItems, setTankItems] = useState<TankItem[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Live tank controls + drafts displayed while the drawer is open
   const [userTemp, setUserTemp] = useState(26);
   const [userOxy, setUserOxy] = useState(60);
-  const [tempLive, setTempLive] = useState<number | null>(null);
-  const [oxyLive, setOxyLive] = useState<number | null>(null);
+  const [tempDraft, setTempDraft] = useState(userTemp);
+  const [oxyDraft,  setOxyDraft]  = useState(userOxy);
   const [isSliding, setIsSliding] = useState(false);
 
   const [menuVisible, setMenuVisible] = useState(false);
   const slide = React.useRef(new Animated.Value(0)).current;
 
+  // Drag & drop state (can start from left palette or an existing tank item)
   const [dragging, setDragging] = useState(false);
-  const [dragItem, setDragItem] = useState<Species | null>(null);
+  const [dragItem, setDragItem] = useState<Species | TankItem | null>(null); // accept both
   const [dragX, setDragX] = useState(0);
   const [dragY, setDragY] = useState(0);
   const [dragSource, setDragSource] = useState<'left' | 'tank' | null>(null);
   const [dragExistingId, setDragExistingId] = useState<string | null>(null);
   const dragOrigRef = React.useRef<{ x: number; y: number } | null>(null);
 
-  //Measure the tank’s position on screen, so when we drop something (using pageX/pageY) we can convert to local x/y inside the tank and keep fish inside bounds.
+  //Measure the tank’s position on screen, so when we drop something (using pageX/pageY)
+  //we can convert to local x/y inside the tank and keep fish inside bounds.
   const tankRef = useRef<View>(null);
   const [tankRect, setTankRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
 
+  const [bgIndex, setBgIndex] = useState(0);
+  const bgFade = useRef(new Animated.Value(1)).current;
+  const setBgWithFade = (nextIndex: number) => {
+    if (!tankBackgrounds.length) return;
+    Animated.timing(bgFade, { toValue: 0, duration: 120, useNativeDriver: true }).start(() => {
+      setBgIndex((nextIndex + tankBackgrounds.length) % tankBackgrounds.length);
+      Animated.timing(bgFade, { toValue: 1, duration: 160, useNativeDriver: true }).start();
+    });
+  };
+
+  // Add this near your other refs
+  const viewRef = useRef<any>(null); // ref to ViewShot
+
+  // Save a screenshot when leaving the tank
+  async function saveTankScreenshot() {
+    try {
+      // On web, use base64; on native, use tmpfile
+      const result = await viewRef.current?.capture?.({
+        format: 'jpg',
+        quality: 0.9,
+        result: Platform.OS === 'web' ? 'base64' : 'tmpfile',
+      });
+      if (!result) return;
+
+      let uri: string;
+
+      if (Platform.OS === 'web') {
+        // base64 -> data URI for web
+        uri = `data:image/jpeg;base64,${result}`;
+        await AsyncStorage.setItem('lastTankScreenshotUri', uri);
+      } else {
+        // persist to app storage on iOS/Android
+        const dest = FileSystem.documentDirectory + 'tank-preview.jpg';
+        try { await FileSystem.deleteAsync(dest, { idempotent: true }); } catch {}
+        await FileSystem.copyAsync({ from: result as string, to: dest });
+        uri = dest;
+        await AsyncStorage.setItem('lastTankScreenshotUri', uri);
+      }
+
+      // Send it to Home (also stored in AsyncStorage for later loads)
+      (navigation as any).navigate('Home', { tankPreviewUri: uri });
+    } catch (e) {
+      console.warn('Failed to capture tank', e);
+    }
+  }
+
+  const goPrevBg = () => setBgWithFade(bgIndex - 1);
+  const goNextBg = () => setBgWithFade(bgIndex + 1);
+
+  const [activeItemId, setActiveItemId] = useState<string | null>(null);
+  const activeItem = useMemo(
+    () => tankItems.find(i => i.instanceId === activeItemId) ?? null,
+    [tankItems, activeItemId]
+  );
+  const [bubbleSize, setBubbleSize] = useState<{ w: number; h: number } | null>(null);
+
+  const [nameModalVisible, setNameModalVisible] = useState(false);
+  const [nameModalMode, setNameModalMode] = useState<NameModalMode>('create');
+  const [nameDraft, setNameDraft] = useState('');
+  const [pendingNew, setPendingNew] = useState<{ base: Species; x: number; y: number; instanceId: string } | null>(null);
+
+  const [waterEnv, setWaterEnv] = useState<WaterType>('freshwater');
+
+  // reset bubble measurement when switching active item
+  React.useEffect(() => { setBubbleSize(null); }, [activeItemId]);
+
   const openMenu = () => {
+    // When opening, sync drafts to saved values so closing without sliding keeps state consistent.
     setMenuVisible(true);
     Animated.timing(slide, { toValue: 1, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: false }).start();
   };
-  const closeMenu = () => {
-    Animated.timing(slide, { toValue: 0, duration: 200, easing: Easing.in(Easing.cubic), useNativeDriver: false }).start(() => {
-      setMenuVisible(false);
-    });
-  };
+
+  // Whenever the drawer becomes visible, refresh drafts from the committed values (So reopening shows the last saved settings.)
+  React.useEffect(() => {
+    if (menuVisible) {
+      setTempDraft(userTemp);
+      setOxyDraft(userOxy);
+    }
+  }, [menuVisible, userTemp, userOxy]);
+
+  // save when items change
+  React.useEffect(() => {
+    saveTankSnapshot(tankItems, waterEnv, userTemp, userOxy);
+  }, [tankItems]);
+
+  // save when controls/environment change
+  React.useEffect(() => {
+    saveTankSnapshot(tankItems, waterEnv, userTemp, userOxy);
+  }, [userTemp, userOxy, waterEnv]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      // on focus: nothing
+      return () => {
+        // on blur: capture and persist a fresh screenshot
+        saveTankScreenshot().catch(console.warn);
+      };
+    }, [])
+  );
+
+  const closeMenu = React.useCallback(() => {
+    // commit the latest drafts
+    setUserTemp(tempDraft);
+    setUserOxy(oxyDraft);
+    setIsSliding(false);
+
+    Animated.timing(slide, {
+      toValue: 0,
+      duration: 200,
+      easing: Easing.in(Easing.cubic),
+      useNativeDriver: false
+    }).start(() => setMenuVisible(false));
+  }, [tempDraft, oxyDraft, slide]);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -109,8 +240,7 @@ export default function AquariumScreen() {
         return;
       }
       // Native (Android/iOS): lock to landscape
-      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE)
-        .catch(() => {}); // safety
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => {});
 
       return () => {
         ScreenOrientation.unlockAsync().catch(() => {});
@@ -118,7 +248,7 @@ export default function AquariumScreen() {
     }, [])
   );
 
-  //Every time this screen is focused, pull fresh data from Firestore
+  //Every time this screen is focused, pull fresh data from Firestore 
   useFocusEffect(
     React.useCallback(() => {
       let alive = true;
@@ -144,7 +274,7 @@ export default function AquariumScreen() {
     const asset = fishImages[key];
     if (asset) return asset;
     if (s.imageURL) return { uri: s.imageURL };
-    return defaultFishImage; 
+    return defaultFishImage;  // fall back if no image found
   };
 
   const onTankLayout = () => {
@@ -162,6 +292,7 @@ export default function AquariumScreen() {
   };
 
   const startDragExisting = (item: TankItem, pageX: number, pageY: number) => {
+    setActiveItemId(null); // close bubble while dragging
     setDragSource('tank');
     setDragItem(item);
     setDragExistingId(item.instanceId);
@@ -172,12 +303,41 @@ export default function AquariumScreen() {
     setDragging(true);
   };
 
+  const nameOf = (x: Species | TankItem) => ('nickname' in x && x.nickname) ? x.nickname! : x.name;
+
+  // switch environment with warning about affected items
+  const switchEnv = (next: WaterType) => {
+    if (next === waterEnv) return;
+    const affected = tankItems.filter(
+      it => ((it.type || 'freshwater').toLowerCase() as WaterType) !== next
+    );
+    if (affected.length) {
+      Alert.alert(
+        `Switch to ${next === 'freshwater' ? 'Freshwater' : 'Saltwater'}?`,
+        `This action will affect ${affected.length} item(s):\n\n` +
+          affected.map(it => `• ${nameOf(it)} (${it.name})`).join('\n'),
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Switch', onPress: () => setWaterEnv(next) },
+        ]
+      );
+    } else {
+      setWaterEnv(next);
+    }
+  };
+
+  // left filtered by environment
+  const visibleSpecies = useMemo(
+    () => speciesList.filter(sp => (sp.type || 'freshwater').toLowerCase() === waterEnv),
+    [speciesList, waterEnv]
+  );
+
   // If dropped inside the tank:
   //  - convert pageX/pageY to local x/y
   //  - clamp so image stays fully inside
   //  - add (or move) the fish
   // If dropped outside and it was an existing fish:
-  //  - put it back where it was
+  //  - put it back where it was 
   const handleDrop = (pageX: number, pageY: number) => {
     if (!tankRect || !dragItem) return cleanupDrag();
 
@@ -188,16 +348,61 @@ export default function AquariumScreen() {
     if (inside) {
       const localX = clamp(pageX - tankRect.x - FISH_W / 2, 0, tankRect.w - FISH_W);
       const localY = clamp(pageY - tankRect.y - FISH_H / 2, 0, tankRect.h - FISH_H);
-      const instanceId =
-        dragSource === 'tank' && dragExistingId
-          ? dragExistingId
-          : `${(dragItem as Species).id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
-      setTankItems(prev => [...prev, { ...(dragItem as Species), instanceId, x: localX, y: localY } as TankItem]);
+      if (dragSource === 'left') {
+        const base = dragItem as Species;
+        const instanceId = `${base.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+
+        // Build conflicts (duplicates, explicit incompat, water mismatch)
+        //Only use "hard NO" rules + a few self-avoid species. If any tank item is in your incompatible list (or vice versa), we show "Avoid".
+        const conflicts = addConflicts(base, tankItems);
+        const waterMismatch =
+          ((base.type || 'freshwater').toLowerCase() as WaterType) !== waterEnv
+            ? [`• ${base.name} — is ${(base.type || 'unknown')} while environment is ${waterEnv}`]
+            : [];
+        const allMsgs = [...conflicts, ...waterMismatch];
+
+        const proceed = () => {
+          if ((base.kind || 'fish') === 'fish') {
+            setPendingNew({ base, x: localX, y: localY, instanceId });
+            setNameDraft('');
+            setNameModalMode('create');
+            setNameModalVisible(true);
+          } else {
+            setTankItems(prev => [
+              ...prev,
+              { ...(base as Species), instanceId, x: localX, y: localY } as TankItem,
+            ]);
+          }
+        };
+
+        if (allMsgs.length) {
+          Alert.alert(
+            'Heads up',
+            `This action will affect:\n\n${allMsgs.join('\n')}\n\nProceed?`,
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Proceed', style: 'destructive', onPress: proceed },
+            ]
+          );
+        } else {
+          proceed();
+        }
+      } else if (dragSource === 'tank' && dragExistingId) {
+        const moving = dragItem as TankItem;
+        setTankItems(prev => [
+          ...prev,
+          { ...(moving as Species), instanceId: dragExistingId, x: localX, y: localY, nickname: moving.nickname } as TankItem,
+        ]);
+      }
     } else if (dragSource === 'tank' && dragExistingId) {
       const orig = dragOrigRef.current;
       if (orig) {
-        setTankItems(prev => [...prev, { ...(dragItem as Species), instanceId: dragExistingId, x: orig.x, y: orig.y } as TankItem]);
+        const moving = dragItem as TankItem;
+        setTankItems(prev => [
+          ...prev,
+          { ...(moving as Species), instanceId: dragExistingId, x: orig.x, y: orig.y, nickname: moving.nickname } as TankItem,
+        ]);
       }
     }
     cleanupDrag();
@@ -211,8 +416,82 @@ export default function AquariumScreen() {
     dragOrigRef.current = null;
   };
 
-  const removeFromTank = (instanceId: string) => {
-    setTankItems(prev => prev.filter(t => t.instanceId !== instanceId));
+  function getBubblePositionOnScreen(
+    item: TankItem,
+    tank: { x: number; y: number; w: number; h: number },
+    insetsVals: { top: number; right: number; bottom: number; left: number },
+    bubble: { w: number; h: number } | null
+  ) {
+    const win = Dimensions.get('window');
+    const w = bubble?.w ?? BUBBLE_W;
+    const h = bubble?.h ?? BUBBLE_DEFAULT_H;
+
+    const screenW = win.width  - insetsVals.left - insetsVals.right;
+    const screenH = win.height - insetsVals.top  - insetsVals.bottom;
+
+    const fishLeft = (tank.x - insetsVals.left) + item.x;
+    const fishTop  = (tank.y - insetsVals.top)  + item.y;
+
+    const spaceBelow = screenH - (fishTop + FISH_H);
+    const placeBelow = spaceBelow >= h + 8;
+
+    let top  = placeBelow ? (fishTop + FISH_H + 8) : (fishTop - h - 8);
+    let left = fishLeft - 16;
+
+    // Clamp & avoid left rail
+    const leftMax = screenW - w - UI_EDGE_GAP;
+    const desiredMinLeft = LEFT_BAR_W + UI_EDGE_GAP;
+    const leftMin = Math.min(desiredMinLeft, leftMax);
+
+    left = clamp(left, leftMin, leftMax);
+    top  = clamp(top,  UI_EDGE_GAP, screenH - h - UI_EDGE_GAP);
+
+    return { left, top, width: w };
+  }
+
+  const onTankItemPress = (item: TankItem) => {
+    setActiveItemId(curr => (curr === item.instanceId ? null : item.instanceId));
+  };
+
+  const confirmCreateItem = () => {
+    if (!pendingNew) return;
+    const { base, x, y, instanceId } = pendingNew;
+    setTankItems(prev => [
+      ...prev,
+      { ...(base as Species), instanceId, x, y, nickname: nameDraft.trim() || defaultNicknameFor(base) } as TankItem,
+    ]);
+    setPendingNew(null);
+    setNameModalVisible(false);
+  };
+
+  const startRename = (item: TankItem) => {
+    setActiveItemId(item.instanceId);
+    setNameDraft(item.nickname || '');
+    setNameModalMode('rename');
+    setNameModalVisible(true);
+  };
+
+  const confirmRename = () => {
+    setTankItems(prev =>
+      prev.map(i =>
+        i.instanceId === activeItemId
+          ? { ...i, nickname: (nameDraft.trim() || i.nickname || defaultNicknameFor(i)) }
+          : i
+      )
+    );
+    setNameModalVisible(false);
+  };
+
+  const deleteItem = (id: string) => {
+    Alert.alert('Delete', 'Remove this from your tank?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => setTankItems(prev => prev.filter(t => t.instanceId !== id)) },
+    ]);
+  };
+
+  const openDetails = (item: TankItem) => {
+    const species = speciesList.find(s => s.id === item.id) || (item as Species);
+    (navigation as any).navigate('Details', { species });
   };
 
   const translateX = slide.interpolate({ inputRange: [0, 1], outputRange: [MENU_W, 0] });
@@ -236,7 +515,7 @@ export default function AquariumScreen() {
             contentContainerStyle={[styles.leftBarContent, { paddingTop: Math.max(insets.top, ANDROID_SAFE) + 8 }]}
             showsVerticalScrollIndicator
           >
-            {speciesList.map(sp => (
+            {visibleSpecies.map(sp => (
               <Pressable
                 key={sp.id}
                 style={styles.thumbWrap}
@@ -261,29 +540,78 @@ export default function AquariumScreen() {
           </ScrollView>
         </View>
 
-        <View ref={tankRef} onLayout={onTankLayout} style={styles.tank}>
-          <View style={styles.tankBgWrap} pointerEvents="none" accessible={false}>
-            <Image source={FishTank} style={styles.FishTank} resizeMode="cover" />
-          </View>
+        <ViewShot ref={viewRef} style={{ flex: 1 }} options={{ format: 'jpg', quality: 0.9 }}>
+          <View ref={tankRef} onLayout={onTankLayout} style={styles.tank}>
+            <View style={styles.tankBgWrap} pointerEvents="none" accessible={false}>
+              <Animated.Image
+                source={tankBackgrounds[bgIndex]?.src}
+                style={[styles.FishTank, { opacity: bgFade }]}
+                resizeMode="cover"
+              />
+            </View>
+
+          {tankBackgrounds.length > 1 && (
+            <>
+              <TouchableOpacity
+                accessibilityLabel="Previous background"
+                onPress={goPrevBg}
+                style={[styles.carouselArrow, styles.carouselArrowLeft]}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              >
+                <Text style={styles.carouselArrowText}>‹</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                accessibilityLabel="Next background"
+                onPress={goNextBg}
+                style={[styles.carouselArrow, styles.carouselArrowRight]}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              >
+                <Text style={styles.carouselArrowText}>›</Text>
+              </TouchableOpacity>
+            </>
+          )}
+
+          {tankBackgrounds[bgIndex]?.label && (
+            <View style={styles.bgCaption}>
+              <Text style={styles.bgCaptionText}>{tankBackgrounds[bgIndex].label}</Text>
+            </View>
+          )}
 
           {tankItems.length === 0 ? (
             <View style={styles.center}>
               <Text style={styles.muted}>Long-press a fish/plant, drag, and drop it into the tank.</Text>
             </View>
           ) : (
-            tankItems.map(item => (
-              <Pressable
-                key={item.instanceId}
-                onPress={() => removeFromTank(item.instanceId)}
-                onLongPress={e => startDragExisting(item, e.nativeEvent.pageX, e.nativeEvent.pageY)}
-                delayLongPress={180}
-                style={[styles.fishWrap, { left: item.x, top: item.y, width: FISH_W, height: FISH_H }]}
-              >
-                <Image source={getImageSource(item)} style={styles.fish} />
-              </Pressable>
-            ))
+            tankItems.map(item => {
+              const isMismatch =
+                ((item.type || 'freshwater').toLowerCase() as WaterType) !== waterEnv;
+              return (
+                <Pressable
+                  key={item.instanceId}
+                  onPress={() => onTankItemPress(item)}
+                  onLongPress={e => startDragExisting(item, e.nativeEvent.pageX, e.nativeEvent.pageY)}
+                  delayLongPress={180}
+                  style={[
+                    styles.fishWrap,
+                    { left: item.x, top: item.y, width: FISH_W, height: FISH_H },
+                    isMismatch && styles.mismatchWrap,
+                  ]}
+                >
+                  <Image source={getImageSource(item)} style={styles.fish} />
+                  {(item.kind === 'fish') && (item.nickname || item.name) && (
+                    <View style={styles.nameTag}>
+                      <Text numberOfLines={1} style={styles.nameTagText}>
+                        {item.nickname || item.name}
+                      </Text>
+                    </View>
+                  )}
+                </Pressable>
+              );
+            })
           )}
         </View>
+      </ViewShot>
 
         <TouchableOpacity
           onPress={openMenu}
@@ -309,6 +637,25 @@ export default function AquariumScreen() {
             </View>
 
             <ScrollView contentContainerStyle={{ paddingBottom: 24 }} scrollEnabled={!isSliding}>
+              <Text style={styles.h1}>Environment</Text>
+              <View style={styles.segment}>
+                {(['freshwater','saltwater'] as WaterType[]).map((opt) => (
+                  <TouchableOpacity
+                    key={opt}
+                    onPress={() => switchEnv(opt)}
+                    style={[styles.segBtn, waterEnv === opt && styles.segBtnActive]}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: waterEnv === opt }}
+                  >
+                    <Text style={[styles.segBtnText, waterEnv === opt && styles.segBtnTextActive]}>
+                      {opt === 'freshwater' ? 'Freshwater' : 'Saltwater'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <View style={styles.divider} />
+
               <Text style={styles.h1}>Tank Stats</Text>
               {summarizeTank(tankItems).map(line => (
                 <Text key={line.label} style={styles.stat}>
@@ -323,23 +670,23 @@ export default function AquariumScreen() {
                  - We find a "recommended" range from the fish in the tank.
                    (max of all mins, min of all maxes). If that range flips
                    (min > max), we show "Conflict".
-                 - While dragging: we show tempLive.
-                 - When you let go: we save to userTemp.
+                 - While dragging: we show the draft value.
+                 - When you close the drawer: we commit to userTemp.
               */}
-              <Text style={styles.controlLabel}>Temperature: {(tempLive ?? userTemp).toFixed(1)}°C</Text>
+              <Text style={styles.controlLabel}>Temperature: {tempDraft.toFixed(1)}°C</Text>
               <View style={styles.sliderWrap} pointerEvents="box-none">
                 <Slider
-                  value={tempLive ?? userTemp}
+                  value={tempDraft}
                   onSlidingStart={() => setIsSliding(true)}
-                  onValueChange={(v) => setTempLive(v)}
-                  onSlidingComplete={(v) => { setUserTemp(v); setTempLive(null); setIsSliding(false); }} // commit
+                  onValueChange={setTempDraft}
+                  onSlidingComplete={(v) => { setTempDraft(v); setIsSliding(false); }}
                   minimumValue={15}
                   maximumValue={35}
                   step={0.5}
                   style={styles.slider}
                 />
               </View>
-              {renderTempHint(tankItems, tempLive ?? userTemp)}
+              {renderTempHint(tankItems, tempDraft)}
 
               {/* ------- Oxygen slider -------
                  Turn low/medium/high needs into % ranges:
@@ -348,21 +695,21 @@ export default function AquariumScreen() {
                  see "wrong" all the time.
               */}
               <Text style={[styles.controlLabel, { marginTop: 16 }]}>
-                Oxygen / Aeration: {Math.round(oxyLive ?? userOxy)}%
+                Oxygen / Aeration: {Math.round(oxyDraft)}%
               </Text>
               <View style={styles.sliderWrap} pointerEvents="box-none">
                 <Slider
-                  value={oxyLive ?? userOxy}
+                  value={oxyDraft}
                   onSlidingStart={() => setIsSliding(true)}
-                  onValueChange={(v) => setOxyLive(v)}
-                  onSlidingComplete={(v) => { setUserOxy(v); setOxyLive(null); setIsSliding(false); }}
+                  onValueChange={setOxyDraft}
+                  onSlidingComplete={(v) => { setOxyDraft(v); setIsSliding(false); }}
                   minimumValue={0}
                   maximumValue={100}
                   step={1}
                   style={styles.slider}
                 />
               </View>
-              {renderOxyHint(tankItems, oxyLive ?? userOxy)}
+              {renderOxyHint(tankItems, oxyDraft)}
             </ScrollView>
           </Animated.View>
         </Modal>
@@ -386,6 +733,37 @@ export default function AquariumScreen() {
           </View>
         )}
       </View>
+
+      <Modal visible={nameModalVisible} transparent animationType="fade" onRequestClose={() => setNameModalVisible(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>
+              {nameModalMode === 'create' ? 'Name your fish/plant' : 'Rename'}
+            </Text>
+            <TextInput
+              value={nameDraft}
+              onChangeText={setNameDraft}
+              placeholder="e.g., Bubbles"
+              placeholderTextColor="#94a3b8"
+              autoFocus
+              style={styles.modalInput}
+            />
+            <View style={styles.modalRow}>
+              <TouchableOpacity style={styles.modalBtn} onPress={() => { setNameModalVisible(false); setPendingNew(null); }}>
+                <Text>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.modalPrimary]}
+                onPress={nameModalMode === 'create' ? confirmCreateItem : confirmRename}
+              >
+                <Text style={{ color: '#fff' }}>
+                  {nameModalMode === 'create' ? 'Add to tank' : 'Save'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -402,30 +780,39 @@ function asRange(r?: Range) {
   return r;
 }
 
-// clean up each doc from Firestore: ranges + assetKey + incompatible list
+// clean up each doc from Firestore: ranges + assetKey + incompatible list + normalized type
 function normalizeSpecies(s: Species): Species {
-  const ph = asRange(s.ph);
+  // Accept both "ph" and "pH" from Firestore, and handle array or number
+  const rawPh = (s as any).ph ?? (s as any).pH ?? (s as any)['Ph'] ?? (s as any)['PH'];
+  const ph = typeof rawPh === 'number' ? rawPh : asRange(rawPh);
+
   const temp = asRange(s.temp);
 
   // if assetKey is missing, make one from name/id
   const assetKey = s.assetKey && s.assetKey.length ? toSlug(s.assetKey) : toSlug(s.name || s.id || '');
 
-  const raw =
-    (s as any).incompatibleWith ??
-    [];
+  // incompatibleWith can be array/string/object – normalize to string[] 
+  const rawIncompat = (s as any).incompatibleWith ?? [];
   let arr: string[] = [];
-  if (Array.isArray(raw)) arr = raw;
-  else if (typeof raw === 'string') arr = raw.split(/[,\n;]/);
-  else if (raw && typeof raw === 'object') arr = Object.values(raw as Record<string, any>).map(String);
-
+  if (Array.isArray(rawIncompat)) arr = rawIncompat;
+  else if (typeof rawIncompat === 'string') arr = rawIncompat.split(/[,\n;]/);
+  else if (rawIncompat && typeof rawIncompat === 'object') arr = Object.values(rawIncompat as Record<string, any>).map(String);
   const incompatibleWith = arr.map(v => toSlug(String(v))).filter(Boolean);
 
-  return { ...s, ph, temp, assetKey, incompatibleWith };
+  // Normalize water "type" to 'freshwater' | 'saltwater'
+  const rawType = ((s as any).type ?? 'freshwater').toString().toLowerCase().replace(/\s+/g, '');
+  const type: WaterType =
+    rawType.startsWith('salt') || rawType.startsWith('marine') ? 'saltwater' : 'freshwater';
+
+  // keep kind if present (fish/plant)
+  const kind = (s.kind as any) as ('fish' | 'plant' | undefined);
+
+  return { ...s, ph, temp, assetKey, incompatibleWith, type, kind };
 }
 
-//Only use "hard NO" rules + a few self-avoid species. If any tank item is in your incompatible list (or vice versa), we show "Avoid". Otherwise "Good".
+//Only use "hard NO" rules + a few self-avoid species. If any tank item is in your incompatible list (or vice versa), we show "Avoid".
 function isExplicitlyIncompatible(a: Species, b: Species) {
-  const aId = canonicalId(a); 
+  const aId = canonicalId(a);
   const bId = canonicalId(b);
   const A = a.incompatibleWith || [];
   const B = b.incompatibleWith || [];
@@ -450,16 +837,58 @@ function simpleCompatAgainstTank(candidate: Species, tank: (Species | TankItem)[
   return { label: 'Good', color: '#86EFAC' };
 }
 
+// build conflicts (duplicates, explicit incompat, self-avoid like bettas)
+function addConflicts(candidate: Species, tank: TankItem[]): string[] {
+  const msgs: string[] = [];
+  const candId = canonicalId(candidate);
+
+  // avoid duplicate self-avoid species (e.g., betta vs betta)
+  if (SELF_AVOID.has(candId)) {
+    const clashes = tank.filter(t => canonicalId(t) === candId);
+    for (const c of clashes) {
+      msgs.push(
+        `• ${c.nickname ? c.nickname : c.name} — another ${candidate.name} is already in the tank`
+      );
+    }
+  }
+
+  // explicit incompatibilities either direction
+  for (const t of tank) {
+    if (isExplicitlyIncompatible(candidate, t)) {
+      msgs.push(
+        `• ${t.nickname ? t.nickname : t.name} — incompatible with ${candidate.name}`
+      );
+    }
+  }
+
+  return msgs;
+}
+
 // These are just to give the user feedback.
-function summarizeTank(items: Species[]) {
+function summarizeTank(items: (Species | TankItem)[]) {
   if (!items.length) return [];
-  // average of midpoints of temp ranges
-  const temps = items.map(s => (s.temp ? [asRange(s.temp)!.min, asRange(s.temp)!.max] : null)).filter(Boolean) as [number, number][];
-  const phs = items.map(s => (s.ph ? [asRange(s.ph)!.min, asRange(s.ph)!.max] : null)).filter(Boolean) as [number, number][];
+
+  const temps = items
+    .map(s => {
+      const r = asRange((s as any).temp);
+      return r ? (r.min + r.max) / 2 : null;
+    })
+    .filter((n): n is number => n !== null);
+
+  const phMids = items
+    .map(s => {
+      const v = (s as any).ph;
+      if (!v && v !== 0) return null;
+      if (typeof v === 'number') return v;
+      const r = asRange(v);
+      return r ? (r.min + r.max) / 2 : null;
+    })
+    .filter((n): n is number => n !== null);
+
   const oxy = items.map(s => s.oxygenNeed).filter(Boolean) as Oxygen[];
 
-  const tempAvg = temps.length ? (temps.reduce((a, [lo, hi]) => a + (lo + hi) / 2, 0) / temps.length).toFixed(1) : '—';
-  const phAvg = phs.length ? (phs.reduce((a, [lo, hi]) => a + (lo + hi) / 2, 0) / phs.length).toFixed(2) : '—';
+  const tempAvg = temps.length ? (temps.reduce((a, b) => a + b, 0) / temps.length).toFixed(1) : '—';
+  const phAvg   = phMids.length ? (phMids.reduce((a, b) => a + b, 0) / phMids.length).toFixed(2) : 'No pH data';
 
   // rough oxygen summary
   let oxygenStatus: 'low' | 'medium' | 'high' | 'conflict' = 'medium';
@@ -470,12 +899,48 @@ function summarizeTank(items: Species[]) {
   return [
     { label: 'Species Count', value: String(items.length) },
     { label: 'Avg Temp (°C)', value: String(tempAvg) },
-    { label: 'Avg pH', value: String(phAvg) },
+    { label: 'Avg pH', value: phAvg },
     { label: 'Oxygen Need', value: oxygenStatus },
   ];
 }
 
-// Find one range that works for ALL fish: min = biggest of everyone’s mins, max = smallest of everyone’s maxes. If min > max → impossible range → "Conflict".
+type TankSnapshot = {
+  speciesCount: number;
+  env: WaterType;
+  temp: number;
+  oxy: number;
+  avgPhText: string;
+  backgroundKey?: string;
+  timestamp: number;
+};
+
+async function saveTankSnapshot(
+  items: (Species | TankItem)[],
+  env: WaterType,
+  temp: number,
+  oxy: number
+) {
+  const stats = summarizeTank(items);
+  const speciesCount = items.length;
+  const avgPhText = (stats.find(s => s.label === 'Avg pH')?.value ?? '—') as string;
+
+  const snap: TankSnapshot = {
+    speciesCount,
+    env,
+    temp,
+    oxy,
+    avgPhText,
+    timestamp: Date.now(),
+  };
+  try {
+    await AsyncStorage.setItem('thinktank:snapshot', JSON.stringify(snap));
+  } catch (e) {
+    console.warn('Failed saving tank snapshot', e);
+  }
+}
+
+// Find one range that works for ALL fish: min = biggest of everyone’s mins, max = smallest of everyone’s maxes.
+// If min > max → impossible range → "Conflict".
 function getRecommendedTemp(items: (Species | any)[]) {
   const ranges = items
     .map((s: any) => (s?.temp && Array.isArray(s.temp) ? { min: s.temp[0], max: s.temp[1] } : s?.temp))
@@ -576,6 +1041,36 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%'
   },
+  carouselArrow: {
+    position: 'absolute',
+    top: '50%',
+    marginTop: -20,
+    width: 40,
+    height: 40,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#1E3A5F',
+    backgroundColor: 'rgba(11,29,47,0.85)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 5,
+  },
+  carouselArrowLeft: { left: 12 },
+  carouselArrowRight: { right: 12 },
+  carouselArrowText: { color: '#C7D2FE', fontSize: 22, fontWeight: '700' },
+  bgCaption: {
+    position: 'absolute',
+    bottom: 10,
+    left: 16,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: 'rgba(11,29,47,0.6)',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#1E3A5F',
+  },
+  bgCaptionText: { color: '#E2E8F0', fontSize: 12 },
+
   fishWrap: {
     position: 'absolute',
     alignItems: 'center'
@@ -584,6 +1079,72 @@ const styles = StyleSheet.create({
     width: FISH_W,
     height: FISH_H,
     resizeMode: 'contain'
+  },
+  nameTag: {
+    position: 'absolute',
+    bottom: -18,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
+  nameTagText: {
+    fontSize: 12,
+    color: '#E2E8F0',
+    backgroundColor: 'rgba(16,43,68,0.7)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    maxWidth: 140,
+  },
+  bubble: {
+    position: 'absolute',
+    width: 220,
+    borderRadius: 12,
+    backgroundColor: '#0B1D2F',
+    borderWidth: 1,
+    borderColor: '#1E3A5F',
+    paddingHorizontal: RHYTHM,
+    paddingTop: RHYTHM,
+    paddingBottom: RHYTHM,
+    zIndex: 20,
+  },
+  bubbleTitle: {
+    fontWeight: '700',
+    color: '#C7D2FE',
+    marginBottom: RHYTHM / 1.5,
+  },
+  bubbleRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: RHYTHM,
+  },
+  deleteBtn: {
+    backgroundColor: '#2a1111',
+    borderColor: '#5f1e1e',
+    alignSelf: 'stretch',
+    marginTop: 0,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  bubbleBtnText: {
+    color: '#E2E8F0',
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  bubbleBtn: {
+    backgroundColor: '#0f2a46',
+    borderWidth: 1,
+    borderColor: '#1E3A5F',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mismatchWrap: {
+    borderWidth: 2,
+    borderColor: '#ef4444',
+    borderRadius: 12,
   },
   dragOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -598,7 +1159,7 @@ const styles = StyleSheet.create({
     zIndex: 50,
     elevation: 8,
   },
-    menuButton: {
+  menuButton: {
     position: 'absolute',
     backgroundColor: '#0B1D2F',
     borderRadius: 9999,
@@ -716,5 +1277,78 @@ const styles = StyleSheet.create({
   compText: {
     fontSize: 9,
     fontWeight: '600'
+  },
+  segment: { 
+    flexDirection: 'row', 
+    gap: 8, 
+    marginBottom: 8 
+  },
+  segBtn: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#1E3A5F',
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+    backgroundColor: '#0f2a46',
+  },
+  segBtnActive: { 
+    backgroundColor: '#1a4b7a' 
+  },
+  segBtnText: { 
+    color: '#C7D2FE', fontWeight: '600' 
+  },
+  segBtnTextActive: { 
+    color: '#fff' 
+  },
+  modalBackdrop: {
+    position: 'absolute',
+    left: 0, right: 0, top: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 380,
+    backgroundColor: '#0B1D2F',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#1E3A5F',
+  },
+  modalTitle: { 
+    fontSize: 18, 
+    fontWeight: '700', 
+    marginBottom: 10, 
+    color: '#fff' 
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: '#1E3A5F',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+    marginBottom: 12,
+    color: '#E2E8F0',
+    backgroundColor: '#0f2a46',
+  },
+  modalRow: { 
+    flexDirection: 'row', 
+    justifyContent: 'flex-end', 
+    gap: 8 
+  },
+  modalBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: '#0f2a46',
+    borderWidth: 1,
+    borderColor: '#1E3A5F',
+  },
+  modalPrimary: { 
+    backgroundColor: '#1a4b7a' 
   },
 });
