@@ -104,12 +104,12 @@ npm run lint      # lint
 ```
 
 ## Screenshots
-- `/assets/screenshots/Login.jpg`
-- `assets/screenshots/Signup.jpg`
-- `assets/screenshots/Home.jpg`
-- `assets/screenshots/List.jpg`
-- `assets/screenshots/Details.jpg`
-- `assets/screenshots/Aquarium.jpg`
+![Login](/assets/screenshots/Login.jpg)
+![Signup](/assets/screenshots/Signup.jpg)
+![Home](/assets/screenshots/Home.jpg)
+![List](/assets/screenshots/List.jpg)
+![Details](/assets/screenshots/Details.jpg)
+![Aquarium](/assets/screenshots/Aquarium.jpg)
 
 ## Data Model
 The app stores a single **current tank** document per user:
@@ -231,7 +231,7 @@ export type TankConfig = {
 
 ## Demo
 The demonstration video is linked here.  
-👉 ![Video](\assets\demo\Demo.mp4)
+👉 [Video](/assets/demo/Demo.mp4)
 
 ## Authors & Acknowledgements
 - **Maintainer:** Michaela Kemp
