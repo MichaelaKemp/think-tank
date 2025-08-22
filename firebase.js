@@ -5,7 +5,7 @@ import { getAuth, getReactNativePersistence, initializeAuth } from "firebase/aut
 import { getFirestore } from "firebase/firestore";
 
 // Your web app's Firebase configuration
-const firebaseConfig = { 
+const firebaseConfig = {
   apiKey: API_KEY,
   authDomain: AUTH_DOMAIN,
   projectId: PROJECT_ID,
