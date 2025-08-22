@@ -5,11 +5,12 @@ import * as FileSystem from 'expo-file-system';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { collection, getDocs } from 'firebase/firestore';
 import React, { useMemo, useRef, useState } from 'react';
-import { Alert, Animated, Dimensions, Easing, Image, Modal, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Animated, AppState, Dimensions, Easing, Image, Modal, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import ViewShot from 'react-native-view-shot';
 import FishTank from '../assets/images/Fish-Tank.jpeg';
 import { db } from '../firebase.js';
+import { getCurrentTank, saveCurrentTank } from '../services/tanks';
 
 //Try to load a local image first . If not found, fall back to imageURL in the db, then a default picture.
 const fishImages: Record<string, any> = {
@@ -18,6 +19,22 @@ const fishImages: Record<string, any> = {
   anubias: require('../assets/images/Anubias.png'),
   'java-fern': require('../assets/images/Java-Fern.png'),
   'neon-tetra': require('../assets/images/Neon-Tetra.png'),
+  'amazon-sword': require('../assets/images/Amazon-Sword.png'),
+  'banggai-cardinal': require('../assets/images/Banggai-Cardinalfish.png'),
+  'bristlenose-pleco': require('../assets/images/Bristlenose-Pleco.png'),
+  'caulerpa-prolifera': require('../assets/images/Caulerpa-Prolifera.png'),
+  chaetomorpha: require('../assets/images/Chaetomorpha.png'),
+  'crypt-wendtii': require('../assets/images/Cryptocoryne-Wendtii.png'),
+  'firefish-goby': require('../assets/images/Firefish.png'),
+  'harlequin-rasbora': require('../assets/images/Harlequin-Rasbora.png'),
+  hornwort: require('../assets/images/Hornwort.png'),
+  'kuhli-loach': require('../assets/images/Kuhli-Loach.png'),
+  'ocellaris-clownfish': require('../assets/images/Ocellaris-Clownfish.png'),
+  otocinclus: require('../assets/images/Otocinclus.png'),
+  'corydoras-panda': require('../assets/images/Panda-Corydora.png'),
+  'royal-gramma': require('../assets/images/Royal-Gramma.png'),
+  'tailspot-blenny': require('../assets/images/Tailspot-Blenny.png'),
+  'water-wisteria': require('../assets/images/Water-Wisteria.png'),
 };
 const defaultFishImage = require('../assets/images/Default-Fish.png');
 
@@ -47,13 +64,34 @@ type Species = {
   [k: string]: any;
 };
 
-// per-item nickname (keeps species 'name' intact)
 type TankItem = Species & {
   instanceId: string; // unique per dropped item
   x: number;          // position inside the tank view
   y: number;
   nickname?: string;  // personalized name shown in UI
+  // Preserve original species id so multiple instances can persist
+  speciesId?: string;
 };
+
+// Remove all `undefined` values so Firestore accepts the payload
+function stripUndefinedDeep<T = any>(val: T): T {
+  if (val === undefined) return undefined as any;
+  if (Array.isArray(val)) {
+    const arr = val
+      .map((v) => stripUndefinedDeep(v))
+      .filter((v) => v !== undefined); // remove undefined array
+    return arr as any;
+  }
+  if (val && typeof val === 'object') {
+    const out: any = {};
+    for (const [k, v] of Object.entries(val)) {
+      const cleaned = stripUndefinedDeep(v as any);
+      if (cleaned !== undefined) out[k] = cleaned; // leaves out keys whose values are undefined
+    }
+    return out;
+  }
+  return val;
+}
 
 //Sizes, safe area, etc.
 const LEFT_BAR_W = 96;
@@ -64,8 +102,8 @@ const ANDROID_SAFE = Platform.OS === 'android' ? (StatusBar.currentHeight || 0) 
 
 const BUBBLE_W = 220;
 const BUBBLE_DEFAULT_H = 120; // fallback until measured
-const RHYTHM = 12; // spacing
-const UI_EDGE_GAP = 12; // gap from screen edges & the left rail
+const RHYTHM = 12;
+const UI_EDGE_GAP = 12;
 
 // "slug" = safe, lowercase id (spaces -> dashes).
 //Use this so names, ids, and asset keys match
@@ -79,8 +117,9 @@ const toSlug = (k: string) =>
 
 //Make a canonical id for species and tank items
 //Examples: "Betta Fish", "betta", "BETTA", or an assetKey like "betta".
-//canonicalId picks one of those (prefer assetKey, else id, else name) and then runs it through
-const canonicalId = (s: Species | TankItem) => toSlug(s.assetKey || s.id || s.name || '');
+//canonicalId picks one of those (prefer assetKey, else speciesId, else id, else name) and then runs it through
+const canonicalId = (s: Species | TankItem) =>
+  toSlug((s as any).assetKey || (s as any).speciesId || s.id || s.name || '');
 
 //Some species we never allow duplicates of (e.g., bettas).
 const SELF_AVOID = new Set<string>(['betta']);
@@ -89,7 +128,7 @@ type NameModalMode = 'create' | 'rename';
 const defaultNicknameFor = (sp: Species) => (sp?.name ? `${sp.name}` : 'New Fish');
 
 export default function AquariumScreen() {
-  const navigation = useNavigation<any>(); // for Details nav
+  const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
   const [speciesList, setSpeciesList] = useState<Species[]>([]);
   const [tankItems, setTankItems] = useState<TankItem[]>([]);
@@ -129,13 +168,48 @@ export default function AquariumScreen() {
     });
   };
 
-  // Add this near your other refs
-  const viewRef = useRef<any>(null); // ref to ViewShot
+  const debounce = (fn: (v: any) => void, ms = 600) => {
+    let t: any;
+    return (v: any) => { clearTimeout(t); t = setTimeout(() => fn(v), ms); };
+  };
+
+  // Keep the payload small
+  const serializeItems = (items: TankItem[]) =>
+    items.map(({ instanceId, id, name, kind, type, x, y, nickname, assetKey, imageURL, speciesId }) => ({
+      instanceId, id, name, kind, type, x, y, nickname, assetKey, imageURL, speciesId
+    }));
+
+  // To avoid array merge issues
+  const itemsById = (items: TankItem[]) => {
+    const out: Record<string, ReturnType<typeof serializeItems>[number]> = {};
+    for (const it of serializeItems(items)) {
+      out[it.instanceId] = it;
+    }
+    return out;
+  };
+
+  // To avoid spamming Firestore on every drag pixel
+  const saveTankDebounced = React.useRef(
+    debounce(async (payload: any) => {
+      try {
+        await saveCurrentTank(stripUndefinedDeep(payload));
+      } catch (e) {
+        console.warn('saveTankDebounced failed', e);
+      }
+    }, 600)
+  ).current;
+
+
+  const viewRef = useRef<any>(null);
+
+  // Do not screenshot when navigating to Details etc.
+  const skipScreenshotOnBlurRef = useRef(false);
+  // To avoid overwriting local state on refocus from Details
+  const hydratedOnceRef = useRef(false);
 
   // Save a screenshot when leaving the tank
   async function saveTankScreenshot() {
     try {
-      // On web, use base64; on native, use tmpfile
       const result = await viewRef.current?.capture?.({
         format: 'jpg',
         quality: 0.9,
@@ -146,11 +220,9 @@ export default function AquariumScreen() {
       let uri: string;
 
       if (Platform.OS === 'web') {
-        // base64 -> data URI for web
         uri = `data:image/jpeg;base64,${result}`;
         await AsyncStorage.setItem('lastTankScreenshotUri', uri);
       } else {
-        // persist to app storage on iOS/Android
         const dest = FileSystem.documentDirectory + 'tank-preview.jpg';
         try { await FileSystem.deleteAsync(dest, { idempotent: true }); } catch {}
         await FileSystem.copyAsync({ from: result as string, to: dest });
@@ -158,8 +230,8 @@ export default function AquariumScreen() {
         await AsyncStorage.setItem('lastTankScreenshotUri', uri);
       }
 
-      // Send it to Home (also stored in AsyncStorage for later loads)
-      (navigation as any).navigate('Home', { tankPreviewUri: uri });
+  // Keep Firestore in sync for Home reloads
+  await saveCurrentTank(stripUndefinedDeep({ ...buildPayload(tankItems), previewUri: uri }));
     } catch (e) {
       console.warn('Failed to capture tank', e);
     }
@@ -191,6 +263,23 @@ export default function AquariumScreen() {
     Animated.timing(slide, { toValue: 1, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: false }).start();
   };
 
+  const closeMenu = React.useCallback(() => {
+    // commit the latest drafts
+    setUserTemp(tempDraft);
+    setUserOxy(oxyDraft);
+    setIsSliding(false);
+
+    // save immediately so settings persist even if app/backgrounds
+    saveNow(tankItems).catch(() => {});
+
+    Animated.timing(slide, {
+      toValue: 0,
+      duration: 200,
+      easing: Easing.in(Easing.cubic),
+      useNativeDriver: false
+    }).start(() => setMenuVisible(false));
+  }, [tempDraft, oxyDraft, slide, tankItems]);
+
   // Whenever the drawer becomes visible, refresh drafts from the committed values (So reopening shows the last saved settings.)
   React.useEffect(() => {
     if (menuVisible) {
@@ -199,39 +288,83 @@ export default function AquariumScreen() {
     }
   }, [menuVisible, userTemp, userOxy]);
 
-  // save when items change
+  // save when anything important changes (local snapshot + Firestore)
   React.useEffect(() => {
     saveTankSnapshot(tankItems, waterEnv, userTemp, userOxy);
-  }, [tankItems]);
 
-  // save when controls/environment change
+    // Firestore
+    const payload = {
+      settings: {
+        env: waterEnv,
+        temp: userTemp,
+        oxy: userOxy,
+        backgroundKey: tankBackgrounds[bgIndex]?.key,
+      },
+      fish: serializeItems(tankItems.filter(t => t.kind === 'fish')),
+      plants: serializeItems(tankItems.filter(t => t.kind === 'plant')),
+      // To avoid array-merge bugs
+      items: itemsById(tankItems),
+    };
+    saveTankDebounced(payload);
+  }, [tankItems, userTemp, userOxy, waterEnv, bgIndex]);
+
+  // Build + immediate save to avoid losing updates
+  const buildPayloadRaw = (items: TankItem[]) => ({
+    settings: {
+      env: waterEnv,
+      temp: userTemp,
+      oxy: userOxy,
+      backgroundKey: tankBackgrounds[bgIndex]?.key,
+  },
+  fish: serializeItems(items.filter(t => t.kind === 'fish')),
+  plants: serializeItems(items.filter(t => t.kind === 'plant')),
+  // To avoid array-merge bugs
+  items: itemsById(items),
+});
+
+const buildPayload = (items: TankItem[]) => stripUndefinedDeep(buildPayloadRaw(items));
+
+
+  const saveNow = async (items: TankItem[]) => {
+    try {
+      await saveCurrentTank(buildPayload(items));
+    } catch (e) {
+      console.warn('saveNow failed', e);
+    }
+  };
+
+  // Persist on app background/quit
   React.useEffect(() => {
-    saveTankSnapshot(tankItems, waterEnv, userTemp, userOxy);
-  }, [userTemp, userOxy, waterEnv]);
+    const sub = AppState.addEventListener('change', async (state) => {
+      if (state === 'background' || state === 'inactive') {
+        try {
+          await saveNow(tankItems);
+          await saveTankScreenshot();
+        } catch {}
+      }
+    });
+    return () => sub.remove();
+  }, [tankItems, userTemp, userOxy, waterEnv, bgIndex]);
 
   useFocusEffect(
     React.useCallback(() => {
-      // on focus: nothing
-      return () => {
-        // on blur: capture and persist a fresh screenshot
-        saveTankScreenshot().catch(console.warn);
+      // Saves on leaving this screen
+      const onBeforeRemove = async () => {
+        if (!skipScreenshotOnBlurRef.current) {
+          try {
+            await saveNow(tankItems);
+            await saveTankScreenshot();
+          } catch {}
+        }
+        skipScreenshotOnBlurRef.current = false; // reset
       };
-    }, [])
+      const unsub = navigation.addListener('beforeRemove', onBeforeRemove);
+
+      return () => {
+        unsub();
+      };
+    }, [navigation, tankItems])
   );
-
-  const closeMenu = React.useCallback(() => {
-    // commit the latest drafts
-    setUserTemp(tempDraft);
-    setUserOxy(oxyDraft);
-    setIsSliding(false);
-
-    Animated.timing(slide, {
-      toValue: 0,
-      duration: 200,
-      easing: Easing.in(Easing.cubic),
-      useNativeDriver: false
-    }).start(() => setMenuVisible(false));
-  }, [tempDraft, oxyDraft, slide]);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -269,11 +402,18 @@ export default function AquariumScreen() {
     }, [])
   );
 
-  const getImageSource = (s: Species) => {
-    const key = toSlug(s.assetKey || s.name || s.id || '');
+  const getImageSource = (s: Species | TankItem) => {
+    const key = toSlug(
+      (s as any).assetKey ||
+      (s as any).speciesId ||
+      s.id ||
+      s.name ||
+      ''
+    );
     const asset = fishImages[key];
     if (asset) return asset;
-    if (s.imageURL) return { uri: s.imageURL };
+    const imageURL = (s as any).imageURL;
+    if (imageURL) return { uri: imageURL };
     return defaultFishImage;  // fall back if no image found
   };
 
@@ -297,7 +437,7 @@ export default function AquariumScreen() {
     setDragItem(item);
     setDragExistingId(item.instanceId);
     dragOrigRef.current = { x: item.x, y: item.y }; // so we can snap back if dropped outside
-    setTankItems(prev => prev.filter(t => t.instanceId !== item.instanceId)); // hide while moving
+    setTankItems(prev => prev.filter(t => t.instanceId !== item.instanceId)); // hide while moving (don't save yet)
     setDragX(pageX);
     setDragY(pageY);
     setDragging(true);
@@ -363,16 +503,27 @@ export default function AquariumScreen() {
         const allMsgs = [...conflicts, ...waterMismatch];
 
         const proceed = () => {
-          if ((base.kind || 'fish') === 'fish') {
+          if (base.kind === 'fish') {
             setPendingNew({ base, x: localX, y: localY, instanceId });
             setNameDraft('');
             setNameModalMode('create');
             setNameModalVisible(true);
           } else {
-            setTankItems(prev => [
-              ...prev,
-              { ...(base as Species), instanceId, x: localX, y: localY } as TankItem,
-            ]);
+            // Classify non-fish as plant and save immediately
+            setTankItems(prev => {
+              const newItem: TankItem = {
+                ...(base as Species),
+                id: `${base.id}::${instanceId}`,
+                speciesId: base.id,
+                kind: base.kind ?? 'plant',
+                instanceId,
+                x: localX,
+                y: localY
+              };
+              const next = [...prev, newItem];
+              saveNow(next);
+              return next;
+            });
           }
         };
 
@@ -390,19 +541,27 @@ export default function AquariumScreen() {
         }
       } else if (dragSource === 'tank' && dragExistingId) {
         const moving = dragItem as TankItem;
-        setTankItems(prev => [
-          ...prev,
-          { ...(moving as Species), instanceId: dragExistingId, x: localX, y: localY, nickname: moving.nickname } as TankItem,
-        ]);
+        setTankItems(prev => {
+          const next = [
+            ...prev,
+            { ...(moving as Species), instanceId: dragExistingId, x: localX, y: localY, nickname: moving.nickname } as TankItem,
+          ];
+          saveNow(next);
+          return next;
+        });
       }
     } else if (dragSource === 'tank' && dragExistingId) {
       const orig = dragOrigRef.current;
       if (orig) {
         const moving = dragItem as TankItem;
-        setTankItems(prev => [
-          ...prev,
-          { ...(moving as Species), instanceId: dragExistingId, x: orig.x, y: orig.y, nickname: moving.nickname } as TankItem,
-        ]);
+        setTankItems(prev => {
+          const next = [
+            ...prev,
+            { ...(moving as Species), instanceId: dragExistingId, x: orig.x, y: orig.y, nickname: moving.nickname } as TankItem,
+          ];
+          saveNow(next);
+          return next;
+        });
       }
     }
     cleanupDrag();
@@ -456,10 +615,22 @@ export default function AquariumScreen() {
   const confirmCreateItem = () => {
     if (!pendingNew) return;
     const { base, x, y, instanceId } = pendingNew;
-    setTankItems(prev => [
-      ...prev,
-      { ...(base as Species), instanceId, x, y, nickname: nameDraft.trim() || defaultNicknameFor(base) } as TankItem,
-    ]);
+    // Ensure kind is set for fish, give each item unique id + speciesId, and save immediately
+    const newItem: TankItem = {
+      ...(base as Species),
+      id: `${base.id}::${instanceId}`,
+      speciesId: base.id, 
+      kind: base.kind ?? 'fish',
+      instanceId,
+      x,
+      y,
+      nickname: nameDraft.trim() || defaultNicknameFor(base)
+    };
+    setTankItems(prev => {
+      const next = [...prev, newItem];
+      saveNow(next);
+      return next;
+    });
     setPendingNew(null);
     setNameModalVisible(false);
   };
@@ -472,30 +643,114 @@ export default function AquariumScreen() {
   };
 
   const confirmRename = () => {
-    setTankItems(prev =>
-      prev.map(i =>
+    setTankItems(prev => {
+      const next = prev.map(i =>
         i.instanceId === activeItemId
           ? { ...i, nickname: (nameDraft.trim() || i.nickname || defaultNicknameFor(i)) }
           : i
-      )
-    );
+      );
+      saveNow(next);
+      return next;
+    });
     setNameModalVisible(false);
   };
 
   const deleteItem = (id: string) => {
     Alert.alert('Delete', 'Remove this from your tank?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => setTankItems(prev => prev.filter(t => t.instanceId !== id)) },
+      { text: 'Delete', style: 'destructive', onPress: () => {
+          setTankItems(prev => {
+            const next = prev.filter(t => t.instanceId !== id);
+            saveNow(next);
+            return next;
+          });
+        }
+      },
     ]);
   };
 
-  const openDetails = (item: TankItem) => {
-    const species = speciesList.find(s => s.id === item.id) || (item as Species);
+  const openDetails = async (item: TankItem) => {
+    const baseId = item.speciesId || (item.id?.includes('::') ? item.id.split('::')[0] : item.id);
+    const species = speciesList.find(s => s.id === baseId) || (item as Species);
+    skipScreenshotOnBlurRef.current = true; // Don't run blur save from Details nav
+    await saveNow(tankItems);              // Persist before leaving so refocus can't overwrite
     (navigation as any).navigate('Details', { species });
   };
 
   const translateX = slide.interpolate({ inputRange: [0, 1], outputRange: [MENU_W, 0] });
   const scrimOpacity = slide.interpolate({ inputRange: [0, 1], outputRange: [0, 0.5] });
+
+  // Populate Aquarium state from Firestore on first focus only (prevents overwrite after Details)
+  useFocusEffect(
+    React.useCallback(() => {
+      let alive = true;
+      (async () => {
+        if (hydratedOnceRef.current) return;
+        hydratedOnceRef.current = true;
+
+        try {
+          const tank = await getCurrentTank();
+          if (!alive || !tank) return;
+
+          // settings
+          const env = (tank as any)?.settings?.env as WaterType | undefined;
+          const temp = (tank as any)?.settings?.temp as number | undefined;
+          const oxy  = (tank as any)?.settings?.oxy as number | undefined;
+          const bgKey = (tank as any)?.settings?.backgroundKey as string | undefined;
+
+          if (env) setWaterEnv(env);
+          if (typeof temp === 'number') { setUserTemp(temp); setTempDraft(temp); }
+          if (typeof oxy === 'number')  { setUserOxy(oxy);   setOxyDraft(oxy); }
+          if (bgKey) {
+            const idx = Math.max(0, tankBackgrounds.findIndex(b => b.key === bgKey));
+            setBgIndex(idx === -1 ? 0 : idx);
+          }
+
+          // Prefer dictionary if available, else arrays
+          const dict = (tank as any)?.items;
+          let merged: Partial<TankItem>[] = [];
+          if (dict && typeof dict === 'object' && Object.keys(dict).length) {
+            merged = Object.values(dict) as Partial<TankItem>[];
+          } else {
+            const fish  = (tank as any)?.fish  ?? [];
+            const plants = (tank as any)?.plants ?? [];
+            const toArray = (v: any) =>
+              Array.isArray(v) ? v : (v && typeof v === 'object') ? Object.values(v) : [];
+            merged = [...toArray(fish), ...toArray(plants)];
+          }
+
+          const hydrated: TankItem[] = (merged as Partial<TankItem>[]).map((it, i) => {
+            const rawId = it.id ?? `item-${i}`;
+            const hasSep = typeof rawId === 'string' && rawId.includes('::');
+            const speciesId = (it as any).speciesId || (hasSep ? rawId.split('::')[0] : rawId);
+            const instanceId =
+              it.instanceId ||
+              (hasSep ? rawId.split('::')[1] : undefined) ||
+              `${speciesId}-${i}-${Math.random().toString(36).slice(2,6)}`;
+
+            return {
+              id: rawId, // keep as is (may be unique id)
+              speciesId,
+              name: it.name ?? 'Unknown',
+              kind: (it.kind as any) ?? 'fish',
+              type: (it.type as any) ?? 'freshwater',
+              assetKey: it.assetKey,
+              imageURL: it.imageURL,
+              instanceId,
+              x: typeof it.x === 'number' ? it.x : 20 + (i * 10) % 120,
+              y: typeof it.y === 'number' ? it.y : 20 + (i * 12) % 90,
+              nickname: it.nickname,
+            };
+          });
+
+          setTankItems(hydrated);
+        } catch (e) {
+          console.warn('Failed to load saved tank', e);
+        }
+      })();
+      return () => { alive = false; };
+    }, [])
+  );
 
   if (loading) {
     return (
@@ -507,6 +762,19 @@ export default function AquariumScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#102B44' }} edges={['top', 'right']}>
+      <TouchableOpacity
+        onPress={async () => {
+          skipScreenshotOnBlurRef.current = true; // Manually save here
+          await saveNow(tankItems);
+          await saveTankScreenshot();
+          navigation.canGoBack() ? navigation.goBack() : (navigation as any).navigate('Home');
+        }}
+        style={{ position: 'absolute', left: 12, top: Math.max(insets.top, ANDROID_SAFE) + 12, zIndex: 200, backgroundColor: 'rgba(11,29,47,0.85)', borderWidth: 1, borderColor: '#1E3A5F', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8 }}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+      >
+        <Text style={{ color: '#E2E8F0', fontWeight: '700', fontSize: 16 }}>‹ Back</Text>
+      </TouchableOpacity>
+
       <View style={styles.root}>
 
         <View style={styles.leftRail}>
@@ -733,6 +1001,38 @@ export default function AquariumScreen() {
           </View>
         )}
       </View>
+
+      {activeItem && tankRect && (
+        <View pointerEvents="box-none" style={[StyleSheet.absoluteFillObject, { zIndex: 180 }]}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setActiveItemId(null)} />
+          {(() => {
+            const pos = getBubblePositionOnScreen(activeItem, tankRect, insets, bubbleSize);
+            return (
+              <View
+                onStartShouldSetResponder={() => true}
+                onResponderTerminationRequest={() => false}
+                style={[styles.bubble, { left: pos.left, top: pos.top, width: pos.width, zIndex: 190, elevation: 12 }]}
+                onLayout={e => setBubbleSize({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}
+              >
+                <Text style={styles.bubbleTitle}>{activeItem.nickname || activeItem.name}</Text>
+
+                <View style={styles.bubbleRow}>
+                  <TouchableOpacity style={styles.bubbleBtn} onPress={() => startRename(activeItem)}>
+                    <Text style={styles.bubbleBtnText}>Rename</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.bubbleBtn} onPress={() => openDetails(activeItem)}>
+                    <Text style={styles.bubbleBtnText}>Details</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <TouchableOpacity style={[styles.bubbleBtn, styles.deleteBtn]} onPress={() => deleteItem(activeItem.instanceId)}>
+                  <Text style={styles.bubbleBtnText}>Delete</Text>
+                </TouchableOpacity>
+              </View>
+            );
+          })()}
+        </View>
+      )}
 
       <Modal visible={nameModalVisible} transparent animationType="fade" onRequestClose={() => setNameModalVisible(false)}>
         <View style={styles.modalBackdrop}>
