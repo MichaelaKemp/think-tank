@@ -231,7 +231,7 @@ export type TankConfig = {
 
 ## Demo
 The demonstration video is linked here.  
-👉 **Video:** (assets/demo/demo.mp4)
+👉 **Video:** (./assets/demo/demo.mp4)
 
 ## Authors & Acknowledgements
 - **Maintainer:** Michaela Kemp
@@ -247,7 +247,7 @@ The demonstration video is linked here.
   - Auto-refresh preview after save
 
 ## Contributing
-Contributors welcome! Please open an issue to discuss significant changes first.
+This is a closed academic project. If you’d like to reuse any part of Think Tank or collaborate on improvements, please contact the author listed above. Contributions are welcome for non-commercial academic use.
 
 ## Performance & DX
 - Prefer `npx expo install` for dependency alignment with your Expo SDK.
