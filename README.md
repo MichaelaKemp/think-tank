@@ -104,7 +104,7 @@ npm run lint      # lint
 ```
 
 ## Screenshots
-- `assets/screenshots/Login.jpg`
+- `/assets/screenshots/Login.jpg`
 - `assets/screenshots/Signup.jpg`
 - `assets/screenshots/Home.jpg`
 - `assets/screenshots/List.jpg`
