@@ -231,7 +231,7 @@ export type TankConfig = {
 
 ## Demo
 The demonstration video is linked here.  
-👉 **Video:** (./assets/demo/demo.mp4)
+👉 ![Video](\assets\demo\Demo.mp4)
 
 ## Authors & Acknowledgements
 - **Maintainer:** Michaela Kemp
