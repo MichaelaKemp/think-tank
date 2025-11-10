@@ -1,23 +1,28 @@
-<div align="center">
-  <img src="assets/images/logo.png" alt="Think Tank logo" width="100%" />
-  <h1>Think Tank</h1>
-  <p><em>Modern aquarium planner & tank manager (Expo + React Native + TypeScript)</em></p>
+<p align="center">
+  <img src="./assets/images/logo.png" alt="Think Tank Logo" width="140" />
+</p>
 
-  <p>
-    <img alt="Expo" src="https://img.shields.io/badge/Expo-React%20Native-blue" />
-    <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-Ready-informational" />
-    <img alt="Firebase" src="https://img.shields.io/badge/Firebase-Auth%20%26%20Firestore-orange" />
-    <img alt="Status" src="https://img.shields.io/badge/status-In%20Progress-yellow" />
-  </p>
-</div>
+<h1 align="center">Think Tank</h1>
+
+<p align="center"><em>Modern aquarium planner & tank manager (Expo + React Native + TypeScript)</em></p>
+
+<p align="center">
+  <img alt="Expo" src="https://img.shields.io/badge/Expo-React%20Native-blue" />
+  <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-Ready-informational" />
+  <img alt="Firebase" src="https://img.shields.io/badge/Firebase-Auth%20%26%20Firestore-orange" />
+  <img alt="Status" src="https://img.shields.io/badge/status-In%20Progress-yellow" />
+</p>
 
 ---
 
-# Modern Aquarium Builder & Tracker (Expo + React Native + Firebase)
+# Modern Aquarium Builder & Tracker  
+*(Expo + React Native + Firebase)*
 
-Think Tank lets you **design** and **manage** freshwater or saltwater aquariums with a fun, visual workflow:
-drag in fish and plants/macros, capture a preview, and sync your setup to the cloud. It’s built for an easy,
-playful experience with clean UI and quick actions.
+Think Tank is an aquarium builder and manager designed to make planning and maintaining tanks more intuitive. 
+It lets users design freshwater or saltwater aquariums through a simple, visual workflow where fish and plants can be added, named, and adjusted in real time. 
+The app focuses on a clean and responsive layout that helps users visualise how their tank develops over time, all without putting real fish at risk while learning.
+
+---
 
 ## Table of Contents
 1. [Description](#description)
@@ -35,36 +40,55 @@ playful experience with clean UI and quick actions.
 13. [Contributing](#contributing)
 14. [Performance & DX](#performance--dx)
 15. [Tools & Libraries](#tools--libraries)
-16. [Resources and Credits](#resources-and-credits)
+16. [Resources & Credits](#resources--credits)
+
+---
 
 ## Description
-**Think Tank** is a cross-platform app (Android, iOS, Web via Expo) for aquarium enthusiasts. Create a tank, add fish and plants, and keep a synced snapshot of your current configuration. The **Aquarium** screen supports
-landscape mode for comfortable editing; a **Tank Overview** card provides quick context and actions.
+Think Tank is a cross-platform app built with Expo, React Native, and Firebase. 
+It allows users to plan and manage their aquariums visually. 
+The Aquarium screen supports both portrait and landscape layouts for flexible editing. 
+Snapshots taken within the app are displayed on the Home screen to show visual progress as a reference for how the tank design is evolving. 
+The List screen allows users to explore all fish, plants, and décor available, with search and filtering options, and each element links to a dedicated Details screen where the user can learn more about it. 
+
+---
 
 ## Why I Built This
-I kept fish before and felt demotivated when they died/ I didn’t always know what I’d done wrong. Think Tank is my
-answer: make learning **hands-on** and **visual** so new fish keepers can avoid common mistakes and fewer fish are harmed.
+I’ve always enjoyed keeping fish, but it can be discouraging when mistakes happen, especially when they lead to harm. 
+Think Tank was built to help new and experienced fishkeepers plan responsibly and learn through experimentation without risking the wellbeing of real animals. 
+It’s meant to make aquarium keeping approachable and creative while encouraging thoughtful decisions and better care practices. 
+By combining a hands-on interface with learning-driven features, Think Tank helps users understand compatibility, tank balance, and environmental needs before applying them in real life.
+
+---
 
 ## Technologies & Tools
-- Expo • React Native • React • TypeScript
-- React Navigation (native stack)
-- Firebase Auth + Firestore
-- AsyncStorage (RN auth persistence)
-- React Native libs: `react-native-view-shot`, `react-native-reanimated`, `react-native-gesture-handler`, `@react-native-community/slider`
-- Developer utilities: Expo config, linting, scripts
+- Expo, React Native, React, TypeScript  
+- React Navigation (Native Stack)  
+- Firebase Auth and Firestore  
+- AsyncStorage (for persistent login)  
+- React Native libraries:  
+  `react-native-view-shot`, `react-native-reanimated`, `react-native-gesture-handler`, `@react-native-community/slider`  
+- Developer utilities for linting, configuration, and testing
+
+---
 
 ## Core Features
-- 🐠 **Drag-and-drop builder** for fish, plants/macros, and décor
-- 🌊 **Freshwater & saltwater** modes
-- 🖼️ **Tank snapshot on Home** — capture via `react-native-view-shot`, saved locally and synced to Firestore
-- 🔄 **Cloud sync** of the current tank to Firestore
-- 🔐 **Email/password auth** with persistent login via AsyncStorage
-- 🧭 **Tank Overview** card: preview image, volume, stock list, quick actions
-- 📱 **Portrait/landscape** support (orientation handled in Aquarium screen)
+- Drag-and-drop aquarium builder for fish, plants, and décor  
+- Freshwater and saltwater modes  
+- Option to name fish and personalise each setup  
+- Tank snapshot displayed on the Home screen to show progress visually  
+- Dedicated Details screen for each element (fish, plant, décor) with educational information
+- List screen for browsing, searching, and filtering available elements  
+- Email/password authentication with persistent login  
+- Tank Overview card showing tank volume, stock list, and quick actions  
+- Fully responsive layout supporting portrait and landscape orientations  
+
+---
 
 ## Installation
+
 ```bash
-# 1) Install deps
+# 1) Install dependencies
 npm install
 # or
 yarn install
@@ -73,6 +97,8 @@ yarn install
 #    (Project Settings → General → SDK setup & config)
 ```
 
+<br>
+
 ```js
 // firebase.js (snippet)
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -80,39 +106,53 @@ import { getApp, getApps, initializeApp } from 'firebase/app';
 import { getAuth, getReactNativePersistence, initializeAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
-const firebaseConfig = /* your keys */;
+const firebaseConfig = { /* your keys here */ };
 
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
 let auth;
-try { auth = getAuth(app); }
-catch { auth = initializeAuth(app, { persistence: getReactNativePersistence(AsyncStorage) }); }
+try {
+  auth = getAuth(app);
+} catch {
+  auth = initializeAuth(app, { persistence: getReactNativePersistence(AsyncStorage) });
+}
 
 export const db = getFirestore(app);
 export { auth };
 ```
 
-## Run Development Servers
-```bash
-npm start         # Expo dev server
-# press 'a' to open Android emulator, or scan the QR with Expo Go
+---
 
-npm run android   # prebuild & run on Android
-npm run ios       # prebuild & run on iOS (macOS required)
-npm run web       # web preview
-npm run lint      # lint
+## Run Development Servers
+
+```bash
+npm start         # Expo dev server (scan QR with Expo Go)
+npm run android   # Prebuild & run on Android
+npm run ios       # Prebuild & run on iOS (macOS required)
+npm run web       # Run on web
+npm run lint      # Lint project
 ```
 
+---
+
 ## Screenshots
-![Login](/assets/screenshots/Login.jpg)
-![Signup](/assets/screenshots/Signup.jpg)
-![Home](/assets/screenshots/Home.jpg)
-![List](/assets/screenshots/List.jpg)
-![Details](/assets/screenshots/Details.jpg)
-![Aquarium](/assets/screenshots/Aquarium.jpg)
+
+<p align="center">
+  <img src="/assets/screenshots/Login.jpg" alt="Login screen" width="200"/>
+  <img src="/assets/screenshots/Signup.jpg" alt="Signup screen" width="200"/>
+  <img src="/assets/screenshots/Home.jpg" alt="Home screen" width="200"/>
+  <img src="/assets/screenshots/List.jpg" alt="List screen" width="200"/>
+</p>
+
+<div align="center" style="display: inline-flex; gap: 10px;">
+  <img src="/assets/screenshots/Details.jpg" alt="Details screen" width="200"/>
+  <img src="/assets/screenshots/Aquarium.jpg" alt="Aquarium screen (landscape)" width="600"/>
+</div>
+
+---
 
 ## Data Model
-The app stores a single **current tank** document per user:
+The app stores one active tank per user at a time:  
 ```
 users/{{uid}}/tanks/current
 ```
@@ -129,66 +169,26 @@ export type TankConfig = {
 }
 ```
 
+---
+
 ## Project Structure
 ```
-- .expo/
-  - README.md
-  - devices.json
-  - types/
-- .gitignore
-- .idea/
-  - .gitignore
-  - caches/
-  - deviceManager.xml
-  - misc.xml
-  - modules.xml
-  - think-tank.iml
-  - vcs.xml
-- .vscode/
-  - settings.json
 - App.tsx
-- README.md
-- android/
-  - .gitignore
-  - app/
-  - build.gradle
-  - gradle/
-  - gradle.properties
-  - gradlew
-  - gradlew.bat
-  - settings.gradle
 - app/
   - (tabs)/
   - +not-found.tsx
   - _layout.tsx
-- app.json
 - assets/
   - fonts/
   - images/
 - components/
   - Collapsible.tsx
-  - ExternalLink.tsx
-  - HapticTab.tsx
-  - HelloWave.tsx
-  - ParallaxScrollView.tsx
   - TankOverviewCard.tsx
   - ThemedText.tsx
   - ThemedView.tsx
-  - ui/
-  - ui.tsx
 - constants/
   - Colors.ts
-- eslint.config.js
-- expo-env.d.ts
 - firebase.js
-- hooks/
-  - useAuthState.tsx
-  - useColorScheme.ts
-  - useColorScheme.web.ts
-  - useThemeColor.ts
-- index.ts
-- package-lock.json
-- package.json
 - screens/
   - AquariumScreen.tsx
   - DetailsScreen.tsx
@@ -196,71 +196,54 @@ export type TankConfig = {
   - ListScreen.tsx
   - LoginScreen.tsx
   - SignupScreen.tsx
-- scripts/
-  - reset-project.js
 - services/
-  - DbService.js
-  - progress.tsx
-  - signOut.tsx
   - tanks.ts
+  - signOut.tsx
 - tsconfig.json
 ```
 
-### Key files
-- `App.tsx` – navigation & route gating based on auth
-- `screens/` – main screens:
-  - AquariumScreen.tsx
-  - DetailsScreen.tsx
-  - HomeScreen.tsx
-  - ListScreen.tsx
-  - LoginScreen.tsx
-  - SignupScreen.tsx
-- `components/` – reusable UI:
-  - Collapsible.tsx
-  - ExternalLink.tsx
-  - HapticTab.tsx
-  - HelloWave.tsx
-  - ParallaxScrollView.tsx
-  - TankOverviewCard.tsx
-  - ThemedText.tsx
-  - ThemedView.tsx
-  - ui.tsx
-- `services/tanks.ts` – Firestore helpers
-- `firebase.js` – Auth + Firestore bootstrap
-- `assets/` – images & fonts
+Key files include `App.tsx` for route setup, the `screens/` folder for main navigation, and the `services/` folder for Firebase interactions.
+
+---
 
 ## Demo
-The demonstration video is linked here.  
-👉 [Video](/assets/demo/Demo.mp4)
+A short demo video is available here:  
+👉 [Demo](/assets/demo/Demo.mp4)
+
+---
 
 ## Authors & Acknowledgements
-- **Maintainer:** Michaela Kemp
-- Thanks to open-source contributors behind Expo, React Native, and Firebase.
+- **Maintainer:** Michaela Kemp  
+- Thanks to the open-source teams behind Expo, React Native, and Firebase for providing accessible, well-documented tools.
+
+---
 
 ## Roadmap
-- 🎏 **Tank animations** on the Aquarium screen  
-  - Splash/ripple animation when adding a fish
-  - Fish swim paths & idle motion within bounds; gentle easing & “bounce” on edges
-- 🗂️ **Multiple tanks** per user
-  Path: `users/{{uid}}/tanks/{tankId}` with a `current` pointer
-- 🖼️ **Smarter Home snapshot**  
-  - Auto-refresh preview after save
+- Add subtle tank animations and fish motion within bounds  
+- Allow multiple tanks per user with references under `users/{{uid}}/tanks/{tankId}`  
+- Expand the species and plant database to include more detailed profiles  
+- Improve automatic preview refresh on save  
+
+---
 
 ## Contributing
-This is a closed academic project. If you’d like to reuse any part of Think Tank or collaborate on improvements, please contact the author listed above. Contributions are welcome for non-commercial academic use.
+This is a closed academic project. For collaboration or reuse in educational contexts, please contact the author. Non-commercial contributions are welcome.
+
+---
 
 ## Performance & DX
-- Prefer `npx expo install` for dependency alignment with your Expo SDK.
-- If native modules act up, run a one-time `npm run android`/`npm run ios` to prebuild.
-- On physical devices, accept media permissions before capturing screenshots.
-
+- Use `npx expo install` to ensure SDK compatibility  
+- If native modules aren’t running correctly, prebuild once using `npm run android` or `npm run ios`  
+---
 
 ## Tools & Libraries
-- Expo, React Native, React, TypeScript
-- Firebase (Auth, Firestore)
-- React Navigation (native stack)
-- RN libs: `react-native-view-shot`, `react-native-reanimated`, `react-native-gesture-handler`, `@react-native-community/slider`
+- Expo, React Native, React, TypeScript  
+- Firebase (Auth, Firestore)  
+- React Navigation (Native Stack)  
+- RN Libraries: `react-native-view-shot`, `react-native-reanimated`, `react-native-gesture-handler`, `@react-native-community/slider`
 
-## Resources and Credits
-- Expo docs • React Native docs • Firebase docs
-- Community threads and examples across Stack Overflow & GitHub
+---
+
+## Resources & Credits
+- Expo Docs • React Native Docs • Firebase Docs  
+- Community threads and examples from GitHub and Stack Overflow  
