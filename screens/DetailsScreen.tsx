@@ -17,6 +17,37 @@ export default function SpeciesDetailScreen({ route, navigation }: any) {
     }, [])
   );
 
+  const renderIncompatible = () => {
+    if (!species.incompatibleWith || species.incompatibleWith.length === 0)
+      return null;
+
+    return (
+      <View
+        style={{
+          marginTop: 18,
+          width: "100%",
+          alignItems: isLandscape ? "flex-start" : "center",
+          justifyContent: "center",
+        }}
+      >
+        <Text style={styles.incompatibleHeader}>Incompatible With</Text>
+
+        <View
+          style={[
+            styles.incompatibleWrap,
+            isLandscape && { justifyContent: "flex-start", alignItems: "center" },
+          ]}
+        >
+          {species.incompatibleWith.map((item: string) => (
+            <View key={item} style={styles.incompatiblePill}>
+              <Text style={styles.incompatibleText}>{item}</Text>
+            </View>
+          ))}
+        </View>
+      </View>
+    );
+  };
+
   if (!isLandscape) {
     return (
       <OceanBackground>
@@ -30,15 +61,20 @@ export default function SpeciesDetailScreen({ route, navigation }: any) {
             paddingBottom: 24,
           }}
         >
-          <Card style={{ alignItems: "center", width: "85%" }}>
+          <Card style={{ alignItems: "center", width: "95%", maxWidth: 480 }}>
             <Image source={{ uri: species.imageURL }} style={styles.hero} />
+
             <Text style={styles.name}>{species.name}</Text>
+
             {!!species.scientificName && (
               <Text style={styles.sciName}>{species.scientificName}</Text>
             )}
 
             <View style={styles.stats}>
-              <Stat icon="water" label={`pH ${species.pH?.[0]}–${species.pH?.[1]}`} />
+              <Stat
+                icon="water"
+                label={`pH ${species.pH?.[0]}–${species.pH?.[1]}`}
+              />
               <Stat
                 icon="thermometer"
                 label={`Temp ${species.temp?.[0]}–${species.temp?.[1]}°C`}
@@ -50,6 +86,8 @@ export default function SpeciesDetailScreen({ route, navigation }: any) {
             {!!species.funFact && (
               <Text style={styles.fact}>“{species.funFact}”</Text>
             )}
+
+            {renderIncompatible()}
 
             <BubbleButton title="Close" onPress={() => navigation.goBack()} />
           </Card>
@@ -93,7 +131,10 @@ export default function SpeciesDetailScreen({ route, navigation }: any) {
           >
             <Image
               source={{ uri: species.imageURL }}
-              style={[styles.hero, { width: 200, height: 140, marginBottom: 10 }]}
+              style={[
+                styles.hero,
+                { width: 200, height: 140, marginBottom: 10 },
+              ]}
             />
             <BubbleButton title="Close" onPress={() => navigation.goBack()} />
           </View>
@@ -117,7 +158,10 @@ export default function SpeciesDetailScreen({ route, navigation }: any) {
                 { justifyContent: "flex-start", marginTop: 10 },
               ]}
             >
-              <Stat icon="water" label={`pH ${species.pH?.[0]}–${species.pH?.[1]}`} />
+              <Stat
+                icon="water"
+                label={`pH ${species.pH?.[0]}–${species.pH?.[1]}`}
+              />
               <Stat
                 icon="thermometer"
                 label={`Temp ${species.temp?.[0]}–${species.temp?.[1]}°C`}
@@ -136,6 +180,8 @@ export default function SpeciesDetailScreen({ route, navigation }: any) {
                 “{species.funFact}”
               </Text>
             )}
+
+            {renderIncompatible()}
           </View>
         </Card>
       </View>
@@ -163,4 +209,8 @@ const styles = StyleSheet.create({
   stats: { marginTop: 12, alignSelf: "stretch", flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "center" },
   statPill: { flexDirection: "row", alignItems: "center", backgroundColor: "#F2FAFF", borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
   fact: { marginTop: 12, fontStyle: "italic", textAlign: "center", color: "#607B96" },
+  incompatibleHeader: { fontSize: 15, fontWeight: "600", color: ocean.textDark, marginBottom: 8, textAlign: "center", opacity: 0.7 },
+  incompatibleWrap: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 8, width: "100%" },
+  incompatiblePill: { backgroundColor: "rgba(0, 102, 153, 0.08)", paddingHorizontal: 12, borderRadius: 16, borderWidth: 1, borderColor: "rgba(0, 102, 153, 0.15)" },
+  incompatibleText: { fontSize: 13, fontWeight: "600", color: ocean.textDark, textAlign: "center", opacity: 0.8 },
 });
