@@ -3,7 +3,7 @@ import './firebase';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import React from 'react';
-import { ActivityIndicator, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, View } from 'react-native';
 import { useAuthState } from './hooks/useAuthState';
 import AquariumScreen from './screens/AquariumScreen';
 import DetailsScreen from './screens/DetailsScreen';
@@ -31,18 +31,8 @@ export default function App() {
         {user ? (
           <>
             <Stack.Screen name="Home" component={HomeScreen} />
-
-            <Stack.Screen
-              name="Aquarium"
-              component={AquariumScreen}
-              options={({ navigation }) => ({
-                headerLeft: () => (
-                  <TouchableOpacity onPress={() => navigation.goBack()} style={{ paddingHorizontal: 12 }}>
-                    <Text style={{ fontSize: 16 }}>‹ Back</Text>
-                  </TouchableOpacity>
-                ),
-              })}
-            />
+            
+            <Stack.Screen name="Aquarium" component={AquariumScreen} />
 
             <Stack.Screen name="List" component={ListScreen} />
             <Stack.Screen name="Details" component={DetailsScreen} />

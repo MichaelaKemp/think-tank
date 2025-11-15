@@ -142,19 +142,13 @@ export default function LoginScreen({ navigation }: any) {
                   </View>
 
                   <View style={{ marginTop: 8 }}>
-                    <TouchableOpacity
-                      disabled={busy}
-                      activeOpacity={0.9}
-                      onPress={onLogin}
-                    >
-                      {busy ? (
-                        <View style={styles.loadingBtn}>
-                          <ActivityIndicator />
-                        </View>
-                      ) : (
-                        <BubbleButton title="Log In" onPress={onLogin} />
-                      )}
-                    </TouchableOpacity>
+                    {busy ? (
+                      <View style={styles.loadingBtn}>
+                        <ActivityIndicator />
+                      </View>
+                    ) : (
+                      <BubbleButton title="Log In" onPress={onLogin} />
+                    )}
                   </View>
 
                   <TouchableOpacity onPress={() => navigation.navigate("Signup")}>

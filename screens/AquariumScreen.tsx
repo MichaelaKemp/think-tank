@@ -1,14 +1,15 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Slider from '@react-native-community/slider';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import * as FileSystem from 'expo-file-system';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { collection, getDocs } from 'firebase/firestore';
 import React, { useMemo, useRef, useState } from 'react';
-import { Alert, Animated, AppState, Dimensions, Easing, Image, Modal, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Animated, AppState, Dimensions, Easing, Image, Modal, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View, } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import ViewShot from 'react-native-view-shot';
 import FishTank from '../assets/images/Fish-Tank.jpeg';
+import { auth } from "../firebase";
 import { db } from '../firebase.js';
 import { getCurrentTank, saveCurrentTank } from '../services/tanks';
 
@@ -104,6 +105,7 @@ const BUBBLE_W = 220;
 const BUBBLE_DEFAULT_H = 120; // fallback until measured
 const RHYTHM = 12;
 const UI_EDGE_GAP = 12;
+const ONBOARDING_KEY = "thinktank:onboardingDone";
 
 // "slug" = safe, lowercase id (spaces -> dashes).
 //Use this so names, ids, and asset keys match
@@ -129,10 +131,12 @@ const defaultNicknameFor = (sp: Species) => (sp?.name ? `${sp.name}` : 'New Fish
 
 export default function AquariumScreen() {
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
   const insets = useSafeAreaInsets();
   const [speciesList, setSpeciesList] = useState<Species[]>([]);
   const [tankItems, setTankItems] = useState<TankItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [tankTourStep, setTankTourStep] = useState<0 | 1 | 2 | 3>(0);
 
   // Live tank controls + drafts displayed while the drawer is open
   const [userTemp, setUserTemp] = useState(26);
@@ -153,6 +157,9 @@ export default function AquariumScreen() {
   const [dragExistingId, setDragExistingId] = useState<string | null>(null);
   const dragOrigRef = React.useRef<{ x: number; y: number } | null>(null);
 
+  const [showAquariumTour, setShowAquariumTour] = useState(false);
+  const [aquariumStep, setAquariumStep] = useState<1 | 2 | 3>(1);
+
   //Measure the tank’s position on screen, so when we drop something (using pageX/pageY)
   //we can convert to local x/y inside the tank and keep fish inside bounds.
   const tankRef = useRef<View>(null);
@@ -166,6 +173,11 @@ export default function AquariumScreen() {
       setBgIndex((nextIndex + tankBackgrounds.length) % tankBackgrounds.length);
       Animated.timing(bgFade, { toValue: 1, duration: 160, useNativeDriver: true }).start();
     });
+  };
+
+  const getAquariumKey = () => {
+    const user = auth.currentUser;
+    return user ? `thinktank:aquariumDone:${user.uid}` : null;
   };
 
   const debounce = (fn: (v: any) => void, ms = 600) => {
@@ -345,6 +357,29 @@ const buildPayload = (items: TankItem[]) => stripUndefinedDeep(buildPayloadRaw(i
     });
     return () => sub.remove();
   }, [tankItems, userTemp, userOxy, waterEnv, bgIndex]);
+
+
+  // Start aquarium onboarding if user arrives from Home onboarding
+  React.useEffect(() => {
+    let active = true;
+
+    (async () => {
+      const key = getAquariumKey();
+      if (!key) return;
+
+      const done = await AsyncStorage.getItem(key);
+      if (!active || done === "true") return;
+
+      const fromHome = (route as any)?.params?.onboarding === true;
+
+      if (fromHome) {
+        setShowAquariumTour(true);
+        setAquariumStep(1);
+      }
+    })();
+
+    return () => { active = false };
+  }, [route]);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -760,8 +795,122 @@ const buildPayload = (items: TankItem[]) => stripUndefinedDeep(buildPayloadRaw(i
     );
   }
 
+  const renderAquariumTooltip = () => {
+    if (!showAquariumTour) return null;
+
+    const steps = {
+      1: {
+        title: "Move fish & plants",
+        text: "Long-press any species to move into or around your tank.",
+      },
+      2: {
+        title: "View care details",
+        text: "Tap a fish or plant to view its care information and quick actions.",
+      },
+      3: {
+        title: "Tank settings",
+        text: "Use the top-right button to adjust temperature, oxygen and environment.",
+      },
+    };
+
+    const s = steps[aquariumStep];
+
+    return (
+      <Modal visible transparent animationType="fade">
+        <View
+          style={{
+            ...StyleSheet.absoluteFillObject,
+            backgroundColor: "rgba(4,12,24,0.65)",
+            justifyContent: "flex-end",
+            alignItems: "center",
+            paddingBottom: 40,
+            zIndex: 999,
+          }}
+        >
+          <View
+            style={{
+              width: "92%",
+              maxWidth: 360,
+              backgroundColor: "rgba(15,42,70,0.97)",
+              borderRadius: 16,
+              borderWidth: 1,
+              borderColor: "#38bdf8",
+              padding: 16,
+            }}
+          >
+            <Text
+              style={{
+                color: "#E0F2FE",
+                fontSize: 16,
+                fontWeight: "800",
+                marginBottom: 6,
+              }}
+            >
+              {s.title}
+            </Text>
+
+            <Text
+              style={{
+                color: "#EAF6FF",
+                fontSize: 14,
+                lineHeight: 18,
+                marginBottom: 12,
+              }}
+            >
+              {s.text}
+            </Text>
+
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "flex-end",
+                gap: 8,
+              }}
+            >
+              <TouchableOpacity
+                onPress={() => setShowAquariumTour(false)}
+                style={{
+                  paddingHorizontal: 12,
+                  paddingVertical: 8,
+                  borderRadius: 999,
+                  borderWidth: 1,
+                  borderColor: "#64748b",
+                }}
+              >
+                <Text style={{ color: "#E2E8F0", fontWeight: "600" }}>Skip</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={async () => {
+                  if (aquariumStep < 3) {
+                    setAquariumStep(aquariumStep + 1);
+                  } else {
+                    setShowAquariumTour(false);
+                    const key = getAquariumKey();
+                    if (key) await AsyncStorage.setItem(key, "true");
+                    navigation.navigate("List", { onboarding: true });
+                  }
+                }}
+                style={{
+                  paddingHorizontal: 16,
+                  paddingVertical: 8,
+                  borderRadius: 999,
+                  backgroundColor: "#0ea5e9",
+                }}
+              >
+                <Text style={{ color: "#0B1D2F", fontWeight: "800" }}>
+                  {aquariumStep < 3 ? "Next" : "Continue"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    );
+  };
+
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#102B44' }} edges={['top', 'right']}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#102B44' }} edges={['top', 'right']} >
       <TouchableOpacity
         onPress={async () => {
           skipScreenshotOnBlurRef.current = true; // Manually save here
@@ -1064,6 +1213,7 @@ const buildPayload = (items: TankItem[]) => stripUndefinedDeep(buildPayloadRaw(i
           </View>
         </View>
       </Modal>
+      {renderAquariumTooltip()}
     </SafeAreaView>
   );
 }

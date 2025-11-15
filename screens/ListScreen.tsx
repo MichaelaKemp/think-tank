@@ -1,9 +1,16 @@
 import { Ionicons, MaterialCommunityIcons as MCI } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { useEffect, useMemo, useState } from "react";
 import { Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, useWindowDimensions, View, } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BubbleButton, Card, ocean, OceanBackground, Pill } from "../components/ui";
+import { auth } from "../firebase.js";
 import { getSpecies } from "../services/DbService";
+
+const getListKey = () => {
+  const user = auth.currentUser;
+  return user ? `thinktank:listDone:${user.uid}` : null;
+};
 
 type Kind = "all" | "fish" | "plant";
 
@@ -11,10 +18,48 @@ export default function ListScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
+
   const [kind, setKind] = useState<Kind>("all");
   const [search, setSearch] = useState("");
   const [speciesList, setSpeciesList] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+
+  const [showTour, setShowTour] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+
+    (async () => {
+      const key = getListKey();
+      if (!key) return;
+
+      const done = await AsyncStorage.getItem(key);
+      if (done === "true") return;
+
+      // Check if navigation passed onboarding=true
+      const params: any = navigation.getState().routes.find(
+        (r: any) => r.name === "List"
+      )?.params;
+
+      if (params?.onboarding && active) {
+        setShowTour(true);
+      }
+    })();
+
+    return () => { active = false };
+  }, []);
+
+  const finishTour = async () => {
+    const key = getListKey();
+    if (key) await AsyncStorage.setItem(key, "true");
+    setShowTour(false);
+  };
+
+  const skipTour = async () => {
+    const key = getListKey();
+    if (key) await AsyncStorage.setItem(key, "true");
+    setShowTour(false);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -64,7 +109,13 @@ export default function ListScreen({ navigation }: any) {
           >
             <BubbleButton
               title="Back to Home"
-              onPress={() => navigation.goBack()}
+              onPress={() => {
+                const rootNav = navigation.getParent() ?? navigation;
+                rootNav.reset({
+                  index: 0,
+                  routes: [{ name: "Home" }],
+                });
+              }}
             />
           </View>
         )}
@@ -86,6 +137,7 @@ export default function ListScreen({ navigation }: any) {
                 clearButtonMode="while-editing"
               />
             </View>
+
             <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
               <Pill active={kind === "all"} onPress={() => setKind("all")}>
                 All
@@ -101,16 +153,14 @@ export default function ListScreen({ navigation }: any) {
         )}
 
         <Text style={styles.resultCount}>
-          {loading
-            ? "Loading…"
-            : `${visible.length} result${visible.length === 1 ? "" : "s"}`}
+          {loading ? "Loading…" : `${visible.length} result${visible.length === 1 ? "" : "s"}`}
         </Text>
 
         <ScrollView
           contentContainerStyle={{
             paddingBottom: 60,
             minHeight: height * 0.7,
-            maxWidth: isLandscape ? 700 : "100%" ,
+            maxWidth: isLandscape ? 700 : "100%",
           }}
           showsVerticalScrollIndicator={false}
         >
@@ -151,9 +201,7 @@ export default function ListScreen({ navigation }: any) {
 
           {!loading && visible.length === 0 && (
             <View style={{ paddingVertical: 60, alignItems: "center" }}>
-              <Text style={{ color: "#EAF6FF" }}>
-                No species match your search.
-              </Text>
+              <Text style={{ color: "#EAF6FF" }}>No species match your search.</Text>
             </View>
           )}
         </ScrollView>
@@ -163,12 +211,49 @@ export default function ListScreen({ navigation }: any) {
             <View style={{ width: 220 }}>
               <BubbleButton
                 title="Back to Home"
-                onPress={() => navigation.goBack()}
+                onPress={() => {
+                  const rootNav = navigation.getParent() ?? navigation;
+                  rootNav.reset({
+                    index: 0,
+                    routes: [{ name: "Home" }],
+                  });
+                }}
               />
             </View>
           </View>
         )}
       </View>
+
+      {showTour && (
+        <View style={styles.tourOverlay} pointerEvents="box-none">
+          <View style={styles.tourBubble}>
+            <Text style={styles.tourTitle}>Browse & filter species</Text>
+            <Text style={styles.tourText}>
+              {isLandscape
+                ? "In landscape view, the species list is simplified for easier browsing. Tap a species to learn more about it."
+                : "Use search to find species by name, and use the filter buttons to switch between all species, fish, or plants."
+              }
+            </Text>
+
+            <View style={styles.tourButtonsRow}>
+              <TouchableOpacity
+                onPress={skipTour}
+                style={styles.tourButtonSecondary}
+              >
+                <Text style={styles.tourButtonSecondaryText}>Skip</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={finishTour}
+                style={styles.tourButtonPrimary}
+              >
+                <Text style={styles.tourButtonPrimaryText}>Finish</Text>
+              </TouchableOpacity>
+            </View>
+
+          </View>
+        </View>
+      )}
     </OceanBackground>
   );
 }
@@ -181,4 +266,13 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 18, fontWeight: "900", color: ocean.textDark },
   cardSubtitle: { color: "#6b7280" },
   kindPill: { marginTop: 8, flexDirection: "row", alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, backgroundColor: "#e0f2fe" },
+  tourOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(4,12,24,0.65)", justifyContent: "flex-end", alignItems: "center", paddingBottom: 40, zIndex: 999 },
+  tourBubble: { backgroundColor: "rgba(15,42,70,0.97)", borderRadius: 16, padding: 16, width: "92%", maxWidth: 360, borderWidth: 1, borderColor: "#38bdf8", marginBottom: 20 },
+  tourTitle: { color: "#E0F2FE", fontSize: 16, fontWeight: "800", marginBottom: 6 },
+  tourText: { color: "#EAF6FF", marginBottom: 12, fontSize: 14, lineHeight: 18 },
+  tourButtonsRow: { flexDirection: "row", justifyContent: "flex-end", gap: 8 },
+  tourButtonSecondary: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: "#64748b" },
+  tourButtonSecondaryText: { color: "#E2E8F0", fontWeight: "600" },
+  tourButtonPrimary: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 999, backgroundColor: "#0ea5e9" },
+  tourButtonPrimaryText: { color: "#0B1D2F", fontWeight: "800" },
 });
