@@ -239,7 +239,13 @@ export default function HomeScreen({ navigation, route }: any) {
           </Text>
         )}
 
-        <View style={{ width: "100%", marginTop: 32 }}>
+        <View
+          style={{
+            width: "100%",
+            marginTop: 32,
+            alignItems: "center",
+          }}
+        >
           {loadingTanks ? (
             <ActivityIndicator style={{ marginTop: 16 }} />
           ) : (
