@@ -1,10 +1,10 @@
 {
   "expo": {
-    "name": "think-tank",
+    "name": "Think Tank",
     "slug": "think-tank",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/logo.png",
     "scheme": "thinktank",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
