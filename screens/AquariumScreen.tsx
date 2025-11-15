@@ -5,13 +5,13 @@ import * as FileSystem from 'expo-file-system';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { collection, getDocs } from 'firebase/firestore';
 import React, { useMemo, useRef, useState } from 'react';
-import { Alert, Animated, AppState, Dimensions, Easing, Image, Modal, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View, } from 'react-native';
+import { Alert, Animated, AppState, Easing, Image, Modal, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import ViewShot from 'react-native-view-shot';
 import FishTank from '../assets/images/Fish-Tank.jpeg';
 import { auth } from "../firebase";
 import { db } from '../firebase.js';
-import { getCurrentTank, saveCurrentTank } from '../services/tanks';
+import { getTank, saveTank } from "../services/tanks";
 
 //Try to load a local image first . If not found, fall back to imageURL in the db, then a default picture.
 const fishImages: Record<string, any> = {
@@ -102,7 +102,7 @@ const FISH_H = 110;
 const ANDROID_SAFE = Platform.OS === 'android' ? (StatusBar.currentHeight || 0) : 0;
 
 const BUBBLE_W = 220;
-const BUBBLE_DEFAULT_H = 120; // fallback until measured
+const BUBBLE_FIXED_HEIGHT = 165;
 const RHYTHM = 12;
 const UI_EDGE_GAP = 12;
 const ONBOARDING_KEY = "thinktank:onboardingDone";
@@ -135,6 +135,7 @@ export default function AquariumScreen() {
   const insets = useSafeAreaInsets();
   const [speciesList, setSpeciesList] = useState<Species[]>([]);
   const [tankItems, setTankItems] = useState<TankItem[]>([]);
+  const { tankId } = route.params;
   const [loading, setLoading] = useState(true);
   const [tankTourStep, setTankTourStep] = useState<0 | 1 | 2 | 3>(0);
 
@@ -175,6 +176,63 @@ export default function AquariumScreen() {
     });
   };
 
+  function calculateTankStats(items: TankItem[]) {
+    const speciesCount = items.length;
+    const env = waterEnv;
+    const temp = userTemp;
+    const oxy = userOxy;
+
+    const phValues = items
+      .map((i) => {
+        if (typeof i.ph === "number") return i.ph;
+
+        if (Array.isArray(i.ph) && i.ph.length === 2) {
+          const [min, max] = i.ph;
+          if (typeof min === "number" && typeof max === "number") {
+            return (min + max) / 2;
+          }
+        }
+
+        return null;
+      })
+      .filter((x): x is number => x !== null);
+
+    const avgPhText =
+      phValues.length > 0
+        ? (phValues.reduce((a, b) => a + b, 0) / phValues.length).toFixed(2)
+        : "-";
+
+      return { speciesCount, env, temp, oxy, avgPhText };
+    }
+
+    async function saveTankSnapshot(
+    items: (Species | TankItem)[],
+    env: WaterType,
+    temp: number,
+    oxy: number
+  ) {
+    const stats = summarizeTank(items);
+    const speciesCount = items.length;
+    const avgPhText = (stats.find(s => s.label === 'Avg pH')?.value ?? '—').toString();
+
+    const snap: TankSnapshot = {
+      speciesCount,
+      env,
+      temp,
+      oxy,
+      avgPhText,
+      timestamp: Date.now(),
+    };
+
+    try {
+      await AsyncStorage.setItem(`thinktank:snapshot:${tankId}`, JSON.stringify(snap));
+    } catch (e) {
+      console.warn('Failed saving tank snapshot', e);
+    }
+  }
+
+  const stats = calculateTankStats(tankItems);
+
   const getAquariumKey = () => {
     const user = auth.currentUser;
     return user ? `thinktank:aquariumDone:${user.uid}` : null;
@@ -204,13 +262,21 @@ export default function AquariumScreen() {
   const saveTankDebounced = React.useRef(
     debounce(async (payload: any) => {
       try {
-        await saveCurrentTank(stripUndefinedDeep(payload));
+       await saveToFirestore(
+          stripUndefinedDeep({
+            ...payload,
+            stats,
+          })
+        );
       } catch (e) {
         console.warn('saveTankDebounced failed', e);
       }
     }, 600)
   ).current;
 
+  const saveToFirestore = async (partial: any) => {
+    await saveTank(tankId, partial);
+  };
 
   const viewRef = useRef<any>(null);
 
@@ -243,7 +309,11 @@ export default function AquariumScreen() {
       }
 
   // Keep Firestore in sync for Home reloads
-  await saveCurrentTank(stripUndefinedDeep({ ...buildPayload(tankItems), previewUri: uri }));
+    await saveToFirestore(stripUndefinedDeep({
+      ...buildPayload(tankItems),
+      previewUri: uri,
+      stats,
+    }));
     } catch (e) {
       console.warn('Failed to capture tank', e);
     }
@@ -257,7 +327,6 @@ export default function AquariumScreen() {
     () => tankItems.find(i => i.instanceId === activeItemId) ?? null,
     [tankItems, activeItemId]
   );
-  const [bubbleSize, setBubbleSize] = useState<{ w: number; h: number } | null>(null);
 
   const [nameModalVisible, setNameModalVisible] = useState(false);
   const [nameModalMode, setNameModalMode] = useState<NameModalMode>('create');
@@ -265,9 +334,6 @@ export default function AquariumScreen() {
   const [pendingNew, setPendingNew] = useState<{ base: Species; x: number; y: number; instanceId: string } | null>(null);
 
   const [waterEnv, setWaterEnv] = useState<WaterType>('freshwater');
-
-  // reset bubble measurement when switching active item
-  React.useEffect(() => { setBubbleSize(null); }, [activeItemId]);
 
   const openMenu = () => {
     // When opening, sync drafts to saved values so closing without sliding keeps state consistent.
@@ -330,6 +396,7 @@ export default function AquariumScreen() {
   },
   fish: serializeItems(items.filter(t => t.kind === 'fish')),
   plants: serializeItems(items.filter(t => t.kind === 'plant')),
+  stats,
   // To avoid array-merge bugs
   items: itemsById(items),
 });
@@ -339,7 +406,10 @@ const buildPayload = (items: TankItem[]) => stripUndefinedDeep(buildPayloadRaw(i
 
   const saveNow = async (items: TankItem[]) => {
     try {
-      await saveCurrentTank(buildPayload(items));
+      await saveToFirestore({
+      ...buildPayload(tankItems),
+      stats: calculateTankStats(tankItems),
+    });
     } catch (e) {
       console.warn('saveNow failed', e);
     }
@@ -612,33 +682,36 @@ const buildPayload = (items: TankItem[]) => stripUndefinedDeep(buildPayloadRaw(i
 
   function getBubblePositionOnScreen(
     item: TankItem,
-    tank: { x: number; y: number; w: number; h: number },
-    insetsVals: { top: number; right: number; bottom: number; left: number },
-    bubble: { w: number; h: number } | null
+    tankRect: { x: number; y: number; w: number; h: number },
+    insets: { top: number; right: number; bottom: number; left: number },
   ) {
-    const win = Dimensions.get('window');
-    const w = bubble?.w ?? BUBBLE_W;
-    const h = bubble?.h ?? BUBBLE_DEFAULT_H;
+    const w = BUBBLE_W;
+    const h = BUBBLE_FIXED_HEIGHT;
 
-    const screenW = win.width  - insetsVals.left - insetsVals.right;
-    const screenH = win.height - insetsVals.top  - insetsVals.bottom;
+    // Fish absolute center
+    const fishCenterX = tankRect.x + item.x + FISH_W / 2;
+    const fishTopY = tankRect.y + item.y;
 
-    const fishLeft = (tank.x - insetsVals.left) + item.x;
-    const fishTop  = (tank.y - insetsVals.top)  + item.y;
+    // Try to place ABOVE
+    let left = fishCenterX - w / 2;
+    let top = fishTopY - h - 12;
 
-    const spaceBelow = screenH - (fishTop + FISH_H);
-    const placeBelow = spaceBelow >= h + 8;
+    // Tank boundaries
+    const tankLeft = tankRect.x + UI_EDGE_GAP;
+    const tankRight = tankRect.x + tankRect.w - UI_EDGE_GAP;
+    const tankTop = tankRect.y + UI_EDGE_GAP;
+    const tankBottom = tankRect.y + tankRect.h - UI_EDGE_GAP;
 
-    let top  = placeBelow ? (fishTop + FISH_H + 8) : (fishTop - h - 8);
-    let left = fishLeft - 16;
+    // Clamp horizontal
+    left = clamp(left, tankLeft, tankRight - w);
 
-    // Clamp & avoid left rail
-    const leftMax = screenW - w - UI_EDGE_GAP;
-    const desiredMinLeft = LEFT_BAR_W + UI_EDGE_GAP;
-    const leftMin = Math.min(desiredMinLeft, leftMax);
+    // If above doesn't fit, place BELOW fish
+    if (top < tankTop) {
+      top = fishTopY + FISH_H + 12;
+    }
 
-    left = clamp(left, leftMin, leftMax);
-    top  = clamp(top,  UI_EDGE_GAP, screenH - h - UI_EDGE_GAP);
+    // Final clamp vertically
+    top = clamp(top, tankTop, tankBottom - h);
 
     return { left, top, width: w };
   }
@@ -719,72 +792,63 @@ const buildPayload = (items: TankItem[]) => stripUndefinedDeep(buildPayloadRaw(i
   useFocusEffect(
     React.useCallback(() => {
       let alive = true;
-      (async () => {
-        if (hydratedOnceRef.current) return;
-        hydratedOnceRef.current = true;
 
+      // Do not hydrate until speciesList is loaded
+      if (!speciesList.length) return;
+
+      if (hydratedOnceRef.current) return;
+      hydratedOnceRef.current = true;
+
+      (async () => {
         try {
-          const tank = await getCurrentTank();
+          const tank = await getTank(tankId);
           if (!alive || !tank) return;
 
-          // settings
-          const env = (tank as any)?.settings?.env as WaterType | undefined;
-          const temp = (tank as any)?.settings?.temp as number | undefined;
-          const oxy  = (tank as any)?.settings?.oxy as number | undefined;
-          const bgKey = (tank as any)?.settings?.backgroundKey as string | undefined;
+          // Your tank format
+          const fish = Array.isArray(tank.fish) ? tank.fish : [];
+          const plants = Array.isArray(tank.plants) ? tank.plants : [];
+          const merged = [...fish, ...plants];
 
-          if (env) setWaterEnv(env);
-          if (typeof temp === 'number') { setUserTemp(temp); setTempDraft(temp); }
-          if (typeof oxy === 'number')  { setUserOxy(oxy);   setOxyDraft(oxy); }
-          if (bgKey) {
-            const idx = Math.max(0, tankBackgrounds.findIndex(b => b.key === bgKey));
-            setBgIndex(idx === -1 ? 0 : idx);
-          }
-
-          // Prefer dictionary if available, else arrays
-          const dict = (tank as any)?.items;
-          let merged: Partial<TankItem>[] = [];
-          if (dict && typeof dict === 'object' && Object.keys(dict).length) {
-            merged = Object.values(dict) as Partial<TankItem>[];
-          } else {
-            const fish  = (tank as any)?.fish  ?? [];
-            const plants = (tank as any)?.plants ?? [];
-            const toArray = (v: any) =>
-              Array.isArray(v) ? v : (v && typeof v === 'object') ? Object.values(v) : [];
-            merged = [...toArray(fish), ...toArray(plants)];
-          }
-
-          const hydrated: TankItem[] = (merged as Partial<TankItem>[]).map((it, i) => {
+          // Hydrate by merging species data
+          const hydrated = merged.map((it, i) => {
             const rawId = it.id ?? `item-${i}`;
-            const hasSep = typeof rawId === 'string' && rawId.includes('::');
-            const speciesId = (it as any).speciesId || (hasSep ? rawId.split('::')[0] : rawId);
+            const hasSep = rawId.includes("::");
+            const speciesId =
+              it.speciesId || (hasSep ? rawId.split("::")[0] : rawId);
             const instanceId =
               it.instanceId ||
-              (hasSep ? rawId.split('::')[1] : undefined) ||
-              `${speciesId}-${i}-${Math.random().toString(36).slice(2,6)}`;
+              (hasSep ? rawId.split("::")[1] : undefined) ||
+              `${speciesId}-${i}-${Math.random().toString(36).slice(2, 6)}`;
+
+            const speciesBase = speciesList.find((s) => s.id === speciesId);
 
             return {
-              id: rawId, // keep as is (may be unique id)
+              ...speciesBase,
+              ...it, // <-- saved overrides
+              id: rawId,
               speciesId,
-              name: it.name ?? 'Unknown',
-              kind: (it.kind as any) ?? 'fish',
-              type: (it.type as any) ?? 'freshwater',
-              assetKey: it.assetKey,
-              imageURL: it.imageURL,
+              name: it.name ?? speciesBase?.name ?? "Unknown",
+              kind: speciesBase?.kind ?? it.kind ?? "fish",
+              type: speciesBase?.type ?? it.type ?? "freshwater",
+              assetKey: it.assetKey ?? speciesBase?.assetKey,
+              imageURL: it.imageURL ?? speciesBase?.imageURL,
               instanceId,
-              x: typeof it.x === 'number' ? it.x : 20 + (i * 10) % 120,
-              y: typeof it.y === 'number' ? it.y : 20 + (i * 12) % 90,
+              x: typeof it.x === "number" ? it.x : 20 + ((i * 10) % 120),
+              y: typeof it.y === "number" ? it.y : 20 + ((i * 12) % 90),
               nickname: it.nickname,
             };
           });
 
           setTankItems(hydrated);
-        } catch (e) {
-          console.warn('Failed to load saved tank', e);
+        } catch (err) {
+          console.warn("Failed to load tank", err);
         }
       })();
-      return () => { alive = false; };
-    }, [])
+
+      return () => {
+        alive = false;
+      };
+    }, [speciesList])
   );
 
   if (loading) {
@@ -1155,13 +1219,15 @@ const buildPayload = (items: TankItem[]) => stripUndefinedDeep(buildPayloadRaw(i
         <View pointerEvents="box-none" style={[StyleSheet.absoluteFillObject, { zIndex: 180 }]}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setActiveItemId(null)} />
           {(() => {
-            const pos = getBubblePositionOnScreen(activeItem, tankRect, insets, bubbleSize);
+            const pos = getBubblePositionOnScreen(activeItem, tankRect, insets);
             return (
               <View
                 onStartShouldSetResponder={() => true}
                 onResponderTerminationRequest={() => false}
-                style={[styles.bubble, { left: pos.left, top: pos.top, width: pos.width, zIndex: 190, elevation: 12 }]}
-                onLayout={e => setBubbleSize({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}
+                style={[
+                  styles.bubble,
+                  { left: pos.left, top: pos.top, width: pos.width }
+                ]}
               >
                 <Text style={styles.bubbleTitle}>{activeItem.nickname || activeItem.name}</Text>
 
@@ -1224,10 +1290,21 @@ function clamp(n: number, min: number, max: number) {
 }
 
 // convert [min,max] arrays into {min,max} objects
-function asRange(r?: Range) {
+function asRange(r?: any) {
   if (!r) return undefined;
+
+  // Array form: [min, max]
   if (Array.isArray(r)) return { min: r[0], max: r[1] };
-  return r;
+
+  // Firestore "object index" form: {0: min, 1: max}
+  if (typeof r === 'object' && r !== null && '0' in r && '1' in r) {
+    return { min: r[0], max: r[1] };
+  }
+
+  // Already in {min,max}
+  if (typeof r.min === 'number' && typeof r.max === 'number') return r;
+
+  return undefined;
 }
 
 // clean up each doc from Firestore: ranges + assetKey + incompatible list + normalized type
@@ -1363,31 +1440,6 @@ type TankSnapshot = {
   backgroundKey?: string;
   timestamp: number;
 };
-
-async function saveTankSnapshot(
-  items: (Species | TankItem)[],
-  env: WaterType,
-  temp: number,
-  oxy: number
-) {
-  const stats = summarizeTank(items);
-  const speciesCount = items.length;
-  const avgPhText = (stats.find(s => s.label === 'Avg pH')?.value ?? '—') as string;
-
-  const snap: TankSnapshot = {
-    speciesCount,
-    env,
-    temp,
-    oxy,
-    avgPhText,
-    timestamp: Date.now(),
-  };
-  try {
-    await AsyncStorage.setItem('thinktank:snapshot', JSON.stringify(snap));
-  } catch (e) {
-    console.warn('Failed saving tank snapshot', e);
-  }
-}
 
 // Find one range that works for ALL fish: min = biggest of everyone’s mins, max = smallest of everyone’s maxes.
 // If min > max → impossible range → "Conflict".

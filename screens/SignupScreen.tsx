@@ -43,19 +43,14 @@ export default function SignupScreen({ navigation }: any) {
         password
       );
 
-      // Store onboarding state for THIS user
       await AsyncStorage.setItem(
         `thinktank:onboardingDone:${res.user.uid}`,
         "false"
       );
 
-      // Navigate to Home using root navigator
-      const rootNav = navigation.getParent() ?? navigation;
-
-      rootNav.reset({
-        index: 0,
-        routes: [{ name: "Home", params: { onboarding: true } }],
-      });
+      setTimeout(() => {
+        navigation.navigate("Home", { onboarding: true });
+      }, 100);
 
     } catch (e: any) {
       Alert.alert("Signup failed", e?.message ?? "Please try again.");
@@ -66,124 +61,120 @@ export default function SignupScreen({ navigation }: any) {
 
   return (
     <OceanBackground>
-      <KeyboardAvoidingView behavior={Platform.select({ ios: "padding", android: undefined })} style={{ flex: 1 }}>
+      <KeyboardAvoidingView
+        behavior={Platform.select({ ios: "padding", android: undefined })}
+        style={{ flex: 1 }}
+      >
         <ScrollView contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled">
-        <View
-          style={{
-            flex: 1,
-            flexDirection: isLandscape ? "row" : "column",
-            alignItems: "center",
-            justifyContent: "center",
-            paddingHorizontal: isLandscape ? 80 : 20,
-            paddingTop: isLandscape ? 20 : 120,
-            paddingBottom: 24,
-            gap: isLandscape ? 60 : 18,
-          }}
-        >
           <View
             style={{
-              alignItems: isLandscape ? "flex-start" : "center",
-              flex: isLandscape ? 0.45 : undefined,
+              flex: 1,
+              flexDirection: isLandscape ? "row" : "column",
+              alignItems: "center",
+              justifyContent: "center",
+              paddingHorizontal: isLandscape ? 80 : 20,
+              paddingTop: isLandscape ? 20 : 120,
+              paddingBottom: 24,
+              gap: isLandscape ? 60 : 18,
             }}
           >
-            <Image
-              source={require("../assets/images/logo.png")}
+            <View
               style={{
-                width: isLandscape ? 140 : 200,
-                height: isLandscape ? 140 : 200,
-                marginTop: isLandscape ? 40 : undefined,
-                resizeMode: "contain",
-              }}
-            />
-            <Text
-              style={{
-                color: "#EAF6FF",
-                marginTop: 8,
-                fontSize: 16,
-                textAlign: isLandscape ? "center" : "center",
-                flexWrap: "wrap",
-                maxWidth: isLandscape ? 150 : 320,
-                lineHeight: 22,
+                alignItems: isLandscape ? "flex-start" : "center",
+                flex: isLandscape ? 0.45 : undefined,
               }}
             >
-              Create your account and start building.
-            </Text>
+              <Image
+                source={require("../assets/images/logo.png")}
+                style={{
+                  width: isLandscape ? 140 : 200,
+                  height: isLandscape ? 140 : 200,
+                  marginTop: isLandscape ? 40 : undefined,
+                  resizeMode: "contain",
+                }}
+              />
+              <Text
+                style={{
+                  color: "#EAF6FF",
+                  marginTop: 8,
+                  fontSize: 16,
+                  textAlign: "center",
+                  maxWidth: isLandscape ? 150 : 320,
+                  lineHeight: 22,
+                }}
+              >
+                Create your account and start building.
+              </Text>
+            </View>
+
+            <View style={{ flex: isLandscape ? 0.55 : undefined, width: "100%", marginTop: isLandscape ? 40 : 0 }}>
+              <Card style={{ padding: 16 }}>
+                <View style={{ gap: 12 }}>
+                  <View style={styles.inputRow}>
+                    <Ionicons name="mail" size={18} color="#789" style={{ marginRight: 8 }} />
+                    <TextInput
+                      placeholder="Email"
+                      placeholderTextColor="#6b7280"
+                      autoCapitalize="none"
+                      keyboardType="email-address"
+                      value={email}
+                      onChangeText={setEmail}
+                      style={styles.input}
+                    />
+                  </View>
+
+                  <View style={styles.inputRow}>
+                    <Ionicons name="lock-closed" size={18} color="#789" style={{ marginRight: 8 }} />
+                    <TextInput
+                      placeholder="Password"
+                      placeholderTextColor="#6b7280"
+                      secureTextEntry={secure}
+                      value={password}
+                      onChangeText={setPassword}
+                      style={[styles.input, { flex: 1 }]}
+                    />
+                    <TouchableOpacity onPress={() => setSecure((s) => !s)}>
+                      <Ionicons name={secure ? "eye" : "eye-off"} size={18} color="#789" />
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={styles.inputRow}>
+                    <Ionicons name="lock-closed" size={18} color="#789" style={{ marginRight: 8 }} />
+                    <TextInput
+                      placeholder="Confirm password"
+                      placeholderTextColor="#6b7280"
+                      secureTextEntry={secure2}
+                      value={confirm}
+                      onChangeText={setConfirm}
+                      style={[styles.input, { flex: 1 }]}
+                    />
+                    <TouchableOpacity onPress={() => setSecure2((s) => !s)}>
+                      <Ionicons name={secure2 ? "eye" : "eye-off"} size={18} color="#789" />
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={{ marginTop: 8 }}>
+                    <TouchableOpacity disabled={busy} activeOpacity={0.9} onPress={onSignup}>
+                      {busy ? (
+                        <View style={styles.loadingBtn}>
+                          <ActivityIndicator />
+                        </View>
+                      ) : (
+                        <BubbleButton title="Sign Up" onPress={onSignup} />
+                      )}
+                    </TouchableOpacity>
+                  </View>
+
+                  <TouchableOpacity onPress={() => navigation.navigate("Login")}>
+                    <Text style={{ textAlign: "center", color: ocean.textDark }}>
+                      Have an account?{" "}
+                      <Text style={{ color: ocean.primary, fontWeight: "800" }}>Log in</Text>
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </Card>
+            </View>
           </View>
-
-          <View
-            style={{
-              flex: isLandscape ? 0.55 : undefined,
-              width: "100%",
-              marginTop: isLandscape ? 40 : 0,
-            }}
-          >
-            <Card style={{ padding: 16 }}>
-              <View style={{ gap: 12 }}>
-                <View style={styles.inputRow}>
-                  <Ionicons name="mail" size={18} color="#789" style={{ marginRight: 8 }} />
-                  <TextInput
-                    placeholder="Email"
-                    placeholderTextColor="#6b7280"
-                    autoCapitalize="none"
-                    keyboardType="email-address"
-                    value={email}
-                    onChangeText={setEmail}
-                    style={styles.input}
-                  />
-                </View>
-
-                <View style={styles.inputRow}>
-                  <Ionicons name="lock-closed" size={18} color="#789" style={{ marginRight: 8 }} />
-                  <TextInput
-                    placeholder="Password"
-                    placeholderTextColor="#6b7280"
-                    secureTextEntry={secure}
-                    value={password}
-                    onChangeText={setPassword}
-                    style={[styles.input, { flex: 1 }]}
-                  />
-                  <TouchableOpacity onPress={() => setSecure((s) => !s)}>
-                    <Ionicons name={secure ? "eye" : "eye-off"} size={18} color="#789" />
-                  </TouchableOpacity>
-                </View>
-
-                <View style={styles.inputRow}>
-                  <Ionicons name="lock-closed" size={18} color="#789" style={{ marginRight: 8 }} />
-                  <TextInput
-                    placeholder="Confirm password"
-                    placeholderTextColor="#6b7280"
-                    secureTextEntry={secure2}
-                    value={confirm}
-                    onChangeText={setConfirm}
-                    style={[styles.input, { flex: 1 }]}
-                  />
-                  <TouchableOpacity onPress={() => setSecure2((s) => !s)}>
-                    <Ionicons name={secure2 ? "eye" : "eye-off"} size={18} color="#789" />
-                  </TouchableOpacity>
-                </View>
-
-                <View style={{ marginTop: 8 }}>
-                  <TouchableOpacity disabled={busy} activeOpacity={0.9} onPress={onSignup}>
-                    {busy ? (
-                      <View style={styles.loadingBtn}>
-                        <ActivityIndicator />
-                      </View>
-                    ) : (
-                      <BubbleButton title="Sign Up" onPress={onSignup} />
-                    )}
-                  </TouchableOpacity>
-                </View>
-
-                <TouchableOpacity onPress={() => navigation.navigate("Login")}>
-                  <Text style={{ textAlign: "center", color: ocean.textDark }}>
-                    Have an account?{" "}
-                    <Text style={{ color: ocean.primary, fontWeight: "800" }}>Log in</Text>
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </Card>
-          </View>
-        </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </OceanBackground>

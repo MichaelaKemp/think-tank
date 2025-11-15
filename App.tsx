@@ -5,6 +5,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import React from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { useAuthState } from './hooks/useAuthState';
+
 import AquariumScreen from './screens/AquariumScreen';
 import DetailsScreen from './screens/DetailsScreen';
 import HomeScreen from './screens/HomeScreen';
@@ -27,13 +28,14 @@ export default function App() {
 
   return (
     <NavigationContainer>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Navigator
+        screenOptions={{ headerShown: false }}
+        initialRouteName={user ? "Home" : "Login"}
+      >
         {user ? (
           <>
             <Stack.Screen name="Home" component={HomeScreen} />
-            
             <Stack.Screen name="Aquarium" component={AquariumScreen} />
-
             <Stack.Screen name="List" component={ListScreen} />
             <Stack.Screen name="Details" component={DetailsScreen} />
           </>

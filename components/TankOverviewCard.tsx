@@ -5,6 +5,7 @@ import { ImageBackground, StyleSheet, Text, TouchableOpacity, View } from 'react
 type Bg = number | string | { uri: string } | undefined | null;
 
 type Props = {
+  name?: string; // NEW
   snapshot: {
     speciesCount: number;
     env: 'freshwater' | 'saltwater';
@@ -14,20 +15,25 @@ type Props = {
   } | null;
   onOpenTank: () => void;
   onExplore: () => void;
-  background?: Bg; // require(...) | "file://..." | "https://..." | {uri}
+  background?: Bg;
 };
 
-// TODO: replace with your own local placeholder image:
 const PLACEHOLDER: number = require('../assets/images/Fish-Tank.jpeg');
 
-export default function TankOverviewCard({ snapshot, onOpenTank, onExplore, background }: Props) {
+export default function TankOverviewCard({
+  name,
+  snapshot,
+  onOpenTank,
+  onExplore,
+  background
+}: Props) {
   const [useFallback, setUseFallback] = useState(false);
 
   const source = useMemo(() => {
     if (useFallback) return PLACEHOLDER;
     if (!background) return PLACEHOLDER;
-    if (typeof background === 'number') return background;           // require(...)
-    if (typeof background === 'string') return { uri: background };  // "file://..." or "https://..."
+    if (typeof background === 'number') return background;
+    if (typeof background === 'string') return { uri: background };
     if (typeof background === 'object' && 'uri' in background) return background as { uri: string };
     return PLACEHOLDER;
   }, [background, useFallback]);
@@ -38,14 +44,15 @@ export default function TankOverviewCard({ snapshot, onOpenTank, onExplore, back
       resizeMode="cover"
       style={styles.bg}
       imageStyle={{ borderRadius: 16 }}
-      onError={() => setUseFallback(true)}  // if the file vanished, show placeholder
+      onError={() => setUseFallback(true)}
     >
       <LinearGradient
         colors={['rgba(3,105,161,0.85)','rgba(30,64,175,0.85)']}
         style={StyleSheet.absoluteFill}
       />
       <View style={styles.content}>
-        <Text style={styles.title}>Your Tank</Text>
+
+        <Text style={styles.title}>{name}</Text>
 
         {snapshot ? (
           <View style={styles.rowWrap}>
@@ -61,12 +68,12 @@ export default function TankOverviewCard({ snapshot, onOpenTank, onExplore, back
 
         <View style={styles.ctaRow}>
           <TouchableOpacity style={[styles.cta, styles.ctaPrimary]} onPress={onOpenTank}>
-            <Text style={styles.ctaPrimaryText}>{snapshot ? 'Open Tank' : 'Start Building'}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.cta, styles.ctaGhost]} onPress={onExplore}>
-            <Text style={styles.ctaGhostText}>Explore Species</Text>
+            <Text style={styles.ctaPrimaryText}>
+              {snapshot ? 'Open Tank' : 'Start Building'}
+            </Text>
           </TouchableOpacity>
         </View>
+
       </View>
     </ImageBackground>
   );
@@ -101,6 +108,10 @@ const styles = StyleSheet.create({
   cta: { paddingVertical: 10, paddingHorizontal: 14, borderRadius: 12 },
   ctaPrimary: { backgroundColor: '#FACC15' },
   ctaPrimaryText: { color: '#1f2937', fontWeight: '800' },
-  ctaGhost: { backgroundColor: 'rgba(255,255,255,0.14)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)' },
+  ctaGhost: {
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.25)'
+  },
   ctaGhostText: { color: '#fff', fontWeight: '700' },
 });
