@@ -805,12 +805,10 @@ export default function AquariumScreen() {
           const tank = await getTank(tankId);
           if (!alive || !tank) return;
 
-          // Your tank format
           const fish = Array.isArray(tank.fish) ? tank.fish : [];
           const plants = Array.isArray(tank.plants) ? tank.plants : [];
           const merged = [...fish, ...plants];
 
-          // Hydrate by merging species data
           const hydrated = merged.map((it, i) => {
             const rawId = it.id ?? `item-${i}`;
             const hasSep = rawId.includes("::");
@@ -825,7 +823,7 @@ export default function AquariumScreen() {
 
             return {
               ...speciesBase,
-              ...it, // <-- saved overrides
+              ...it, // saved overrides
               id: rawId,
               speciesId,
               name: it.name ?? speciesBase?.name ?? "Unknown",
@@ -841,6 +839,29 @@ export default function AquariumScreen() {
           });
 
           setTankItems(hydrated);
+
+          const settings = tank.settings || {};
+
+          if (typeof settings.temp === "number") {
+            setUserTemp(settings.temp);
+            setTempDraft(settings.temp);
+          }
+
+          if (typeof settings.oxy === "number") {
+            setUserOxy(settings.oxy);
+            setOxyDraft(settings.oxy);
+          }
+
+          const env = settings.env === "saltwater" ? "saltwater" : "freshwater";
+          setWaterEnv(env);
+
+          if (settings.backgroundKey) {
+            const idx = tankBackgrounds.findIndex(
+              (b) => b.key === settings.backgroundKey
+            );
+            if (idx !== -1) setBgIndex(idx);
+          }
+
         } catch (err) {
           console.warn("Failed to load tank", err);
         }
@@ -1088,22 +1109,22 @@ export default function AquariumScreen() {
                 <Text style={styles.muted}>Long-press a fish/plant, drag, and drop it into the tank.</Text>
               </View>
             ) : (
-              tankItems.map(item => {
-                const isMismatch =
-                  ((item.type || 'freshwater').toLowerCase() as WaterType) !== waterEnv;
-                return (
-                  <Pressable
-                    key={item.instanceId}
-                    onPress={() => onTankItemPress(item)}
-                    onLongPress={e => startDragExisting(item, e.nativeEvent.pageX, e.nativeEvent.pageY)}
-                    delayLongPress={180}
-                    style={[
-                      styles.fishWrap,
-                      { left: item.x, top: item.y, width: FISH_W, height: FISH_H },
-                      isMismatch && styles.mismatchWrap,
-                    ]}
-                  >
-                    <Image source={getImageSource(item)} style={styles.fish} />
+            tankItems.map(item => {
+              const warn = needsWarning(item, waterEnv, tankItems, userTemp, userOxy);
+
+              return (
+                <Pressable
+                  key={item.instanceId}
+                  onPress={() => onTankItemPress(item)}
+                  onLongPress={e => startDragExisting(item, e.nativeEvent.pageX, e.nativeEvent.pageY)}
+                  delayLongPress={180}
+                  style={[
+                    styles.fishWrap,
+                    { left: item.x, top: item.y, width: FISH_W, height: FISH_H },
+                    warn && styles.itemWarningBorder
+                  ]}
+                >
+                  <Image source={getImageSource(item)} style={styles.fish} />
                     {(item.kind === 'fish') && (item.nickname || item.name) && (
                       <View style={styles.nameTag}>
                         <Text numberOfLines={1} style={styles.nameTagText}>
@@ -1403,6 +1424,46 @@ function addConflicts(candidate: Species, tank: TankItem[]): string[] {
   }
 
   return msgs;
+}
+
+function needsWarning(item: TankItem, waterEnv: WaterType, tankItems: TankItem[], temp: number, oxy: number) {
+  let warn = false;
+
+  // 1. ENVIRONMENT mismatch
+  const envMismatch =
+    ((item.type || 'freshwater').toLowerCase() as WaterType) !== waterEnv;
+
+  if (envMismatch) warn = true;
+
+  // 2. EXPLICIT INCOMPATIBILITY
+  for (const other of tankItems) {
+    if (other.instanceId === item.instanceId) continue;
+    if (isExplicitlyIncompatible(item, other)) warn = true;
+  }
+
+  // 3. TEMPERATURE out of recommended range
+  const tempRange = Array.isArray(item.temp)
+    ? item.temp
+    : item.temp && typeof item.temp === "object"
+    ? [item.temp.min, item.temp.max]
+    : null;
+
+  if (tempRange && (temp < tempRange[0] || temp > tempRange[1])) warn = true;
+
+  // 4. OXYGEN out of recommended range
+  const oxyNeed = (item.oxygenNeed || "").toString().toLowerCase();
+  const oxyRanges: Record<string, [number, number]> = {
+    low: [30, 55],
+    medium: [45, 75],
+    high: [65, 90],
+  };
+
+  if (oxyRanges[oxyNeed]) {
+    const [minOxy, maxOxy] = oxyRanges[oxyNeed];
+    if (oxy < minOxy || oxy > maxOxy) warn = true;
+  }
+
+  return warn;
 }
 
 // These are just to give the user feedback.
@@ -1867,4 +1928,9 @@ const styles = StyleSheet.create({
   modalPrimary: {
     backgroundColor: colours.brandButtonBlue
   },
+  itemWarningBorder: {
+  borderWidth: 2,
+  borderColor: colours.compatBad,
+  borderRadius: 12,
+},
 });

@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
 import * as ScreenOrientation from "expo-screen-orientation";
 import { signOut } from "firebase/auth";
@@ -13,7 +14,7 @@ import { auth } from "../firebase";
 import { createTank, getAllTanks } from "../services/tanks";
 import { colours } from "../theme/colours";
 import { getOnboardingKey, shouldShowHomeTour, writeOnboardingStatus, } from "../utils/onboardingUtils";
-import { createDefaultTankIfNeeded, enrichTanksWithSnapshots, sanitizeTankName, } from "../utils/tankUtils";
+import { enrichTanksWithSnapshots, sanitizeTankName } from "../utils/tankUtils";
 
 export default function HomeScreen({ navigation, route }: any) {
   const insets = useSafeAreaInsets();
@@ -64,9 +65,28 @@ export default function HomeScreen({ navigation, route }: any) {
 
         const fromSignup = route?.params?.onboarding === true;
 
-        const tanks = await createDefaultTankIfNeeded(fromSignup);
+        let tanks = await getAllTanks();
 
-        const enriched = await enrichTanksWithSnapshots(tanks);
+        if (!fromSignup && tanks.length === 0) {
+          await createTank("Default Tank");
+          tanks = await getAllTanks();
+        }
+
+        const enriched: any[] = [];
+
+        for (const t of tanks) {
+          const key = `thinktank:snapshot:${t.tankId}`;
+          const raw = await AsyncStorage.getItem(key);
+
+          let stats = null;
+          if (raw) {
+            try {
+              stats = JSON.parse(raw);
+            } catch (e) {}
+          }
+
+          enriched.push({ ...t, stats });
+        }
 
         if (alive) {
           setAllTanks(enriched);
