@@ -4,9 +4,11 @@ import { useFocusEffect } from "@react-navigation/native";
 import * as ScreenOrientation from "expo-screen-orientation";
 import { createUserWithEmailAndPassword, getAuth } from "firebase/auth";
 import React, { useCallback, useState } from "react";
-import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, TouchableOpacity, View, useWindowDimensions, } from "react-native";
-import { BubbleButton, Card, OceanBackground, ocean } from "../components/ui";
+import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions, } from "react-native";
+import { BubbleButton, Card, OceanBackground } from "../components/ui";
 import "../firebase";
+import { colours } from "../theme/colours";
+import { formatFirebaseError, normalizeEmail, validateEmail, validatePassword, } from "../utils/authUtils";
 
 export default function SignupScreen({ navigation }: any) {
   const [email, setEmail] = useState("");
@@ -27,8 +29,13 @@ export default function SignupScreen({ navigation }: any) {
 
   const onSignup = async () => {
     if (busy) return;
-    if (password.length < 6)
-      return Alert.alert("Weak password", "Use at least 6 characters.");
+
+    if (!validateEmail(email))
+      return Alert.alert("Invalid Email", "Please enter a valid email.");
+
+    if (!validatePassword(password))
+      return Alert.alert("Weak Password", "Use at least 6 characters.");
+
     if (password !== confirm)
       return Alert.alert("Mismatch", "Passwords do not match.");
 
@@ -39,7 +46,7 @@ export default function SignupScreen({ navigation }: any) {
 
       const res = await createUserWithEmailAndPassword(
         auth,
-        email.trim(),
+        normalizeEmail(email),
         password
       );
 
@@ -51,9 +58,8 @@ export default function SignupScreen({ navigation }: any) {
       setTimeout(() => {
         navigation.navigate("Home", { onboarding: true });
       }, 100);
-
     } catch (e: any) {
-      Alert.alert("Signup failed", e?.message ?? "Please try again.");
+      Alert.alert("Signup failed", formatFirebaseError(e));
     } finally {
       setBusy(false);
     }
@@ -95,7 +101,7 @@ export default function SignupScreen({ navigation }: any) {
               />
               <Text
                 style={{
-                  color: "#EAF6FF",
+                  color: colours.whiteSofter,
                   marginTop: 8,
                   fontSize: 16,
                   textAlign: "center",
@@ -107,14 +113,25 @@ export default function SignupScreen({ navigation }: any) {
               </Text>
             </View>
 
-            <View style={{ flex: isLandscape ? 0.55 : undefined, width: "100%", marginTop: isLandscape ? 40 : 0 }}>
+            <View
+              style={{
+                flex: isLandscape ? 0.55 : undefined,
+                width: "100%",
+                marginTop: isLandscape ? 40 : 0,
+              }}
+            >
               <Card style={{ padding: 16 }}>
                 <View style={{ gap: 12 }}>
                   <View style={styles.inputRow}>
-                    <Ionicons name="mail" size={18} color="#789" style={{ marginRight: 8 }} />
+                    <Ionicons
+                      name="mail"
+                      size={18}
+                      color={colours.iconMuted}
+                      style={{ marginRight: 8 }}
+                    />
                     <TextInput
                       placeholder="Email"
-                      placeholderTextColor="#6b7280"
+                      placeholderTextColor={colours.textMuted}
                       autoCapitalize="none"
                       keyboardType="email-address"
                       value={email}
@@ -124,32 +141,50 @@ export default function SignupScreen({ navigation }: any) {
                   </View>
 
                   <View style={styles.inputRow}>
-                    <Ionicons name="lock-closed" size={18} color="#789" style={{ marginRight: 8 }} />
+                    <Ionicons
+                      name="lock-closed"
+                      size={18}
+                      color={colours.iconMuted}
+                      style={{ marginRight: 8 }}
+                    />
                     <TextInput
                       placeholder="Password"
-                      placeholderTextColor="#6b7280"
+                      placeholderTextColor={colours.textMuted}
                       secureTextEntry={secure}
                       value={password}
                       onChangeText={setPassword}
                       style={[styles.input, { flex: 1 }]}
                     />
                     <TouchableOpacity onPress={() => setSecure((s) => !s)}>
-                      <Ionicons name={secure ? "eye" : "eye-off"} size={18} color="#789" />
+                      <Ionicons
+                        name={secure ? "eye" : "eye-off"}
+                        size={18}
+                        color={colours.iconMuted}
+                      />
                     </TouchableOpacity>
                   </View>
 
                   <View style={styles.inputRow}>
-                    <Ionicons name="lock-closed" size={18} color="#789" style={{ marginRight: 8 }} />
+                    <Ionicons
+                      name="lock-closed"
+                      size={18}
+                      color={colours.iconMuted}
+                      style={{ marginRight: 8 }}
+                    />
                     <TextInput
                       placeholder="Confirm password"
-                      placeholderTextColor="#6b7280"
+                      placeholderTextColor={colours.textMuted}
                       secureTextEntry={secure2}
                       value={confirm}
                       onChangeText={setConfirm}
                       style={[styles.input, { flex: 1 }]}
                     />
                     <TouchableOpacity onPress={() => setSecure2((s) => !s)}>
-                      <Ionicons name={secure2 ? "eye" : "eye-off"} size={18} color="#789" />
+                      <Ionicons
+                        name={secure2 ? "eye" : "eye-off"}
+                        size={18}
+                        color={colours.iconMuted}
+                      />
                     </TouchableOpacity>
                   </View>
 
@@ -157,7 +192,7 @@ export default function SignupScreen({ navigation }: any) {
                     <TouchableOpacity disabled={busy} activeOpacity={0.9} onPress={onSignup}>
                       {busy ? (
                         <View style={styles.loadingBtn}>
-                          <ActivityIndicator />
+                          <ActivityIndicator color={colours.deepNavy} />
                         </View>
                       ) : (
                         <BubbleButton title="Sign Up" onPress={onSignup} />
@@ -166,9 +201,16 @@ export default function SignupScreen({ navigation }: any) {
                   </View>
 
                   <TouchableOpacity onPress={() => navigation.navigate("Login")}>
-                    <Text style={{ textAlign: "center", color: ocean.textDark }}>
+                    <Text style={{ textAlign: "center", color: colours.textSoftBlue }}>
                       Have an account?{" "}
-                      <Text style={{ color: ocean.primary, fontWeight: "800" }}>Log in</Text>
+                      <Text
+                        style={{
+                          color: colours.primary,
+                          fontWeight: "800",
+                        }}
+                      >
+                        Log in
+                      </Text>
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -181,8 +223,8 @@ export default function SignupScreen({ navigation }: any) {
   );
 }
 
-const styles = {
-  inputRow: { flexDirection: "row" as const, alignItems: "center" as const, backgroundColor: "#F7FBFF", borderRadius: 14, paddingHorizontal: 12, borderWidth: 1, borderColor: "#E5F2FF" },
-  input: { flex: 1, paddingVertical: 10 },
-  loadingBtn: { paddingVertical: 14, borderRadius: 18, alignItems: "center" as const, justifyContent: "center" as const, backgroundColor: "#FFE9A8" },
-};
+const styles = StyleSheet.create({
+  inputRow: { flexDirection: "row" as const, alignItems: "center" as const, backgroundColor: colours.whiteSoft, borderRadius: 14, paddingHorizontal: 12, borderWidth: 1, borderColor: colours.whiteBorder },
+  input: { flex: 1, paddingVertical: 10, color: colours.textDark },
+  loadingBtn: { paddingVertical: 14, borderRadius: 18, alignItems: "center", justifyContent: "center", backgroundColor: colours.brandYellowSoft },
+});

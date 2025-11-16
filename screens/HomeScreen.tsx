@@ -1,5 +1,4 @@
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
 import * as ScreenOrientation from "expo-screen-orientation";
 import { signOut } from "firebase/auth";
@@ -12,6 +11,9 @@ import TankOverviewCard from "../components/TankOverviewCard";
 import { Card, OceanBackground, ocean } from "../components/ui";
 import { auth } from "../firebase";
 import { createTank, getAllTanks } from "../services/tanks";
+import { colours } from "../theme/colours";
+import { getOnboardingKey, shouldShowHomeTour, writeOnboardingStatus, } from "../utils/onboardingUtils";
+import { createDefaultTankIfNeeded, enrichTanksWithSnapshots, sanitizeTankName, } from "../utils/tankUtils";
 
 export default function HomeScreen({ navigation, route }: any) {
   const insets = useSafeAreaInsets();
@@ -29,39 +31,27 @@ export default function HomeScreen({ navigation, route }: any) {
   const [showHomeTour, setShowHomeTour] = useState(false);
   const [homeTourStep, setHomeTourStep] = useState<1 | 2>(1);
 
-  const getOnboardingKey = () => {
-    const currentUser = auth.currentUser;
-    return currentUser ? `thinktank:onboardingDone:${currentUser.uid}` : null;
-  };
-
   useEffect(() => {
-    const checkOnboarding = async () => {
-      const key = getOnboardingKey();
-      if (!key) return;
-
-      const fromSignup = route?.params?.onboarding === true;
-      if (!fromSignup) return;
-
-      const done = await AsyncStorage.getItem(key);
-      if (done === "true") return;
-
-      setHomeTourStep(1);
-      setShowHomeTour(true);
-    };
-
-    checkOnboarding();
+    (async () => {
+      const shouldShow = await shouldShowHomeTour(route?.params?.onboarding);
+      if (shouldShow) {
+        setHomeTourStep(1);
+        setShowHomeTour(true);
+      }
+    })();
   }, [route?.params?.onboarding]);
 
   const handleSkipHomeTour = async () => {
     const key = getOnboardingKey();
-    if (key) await AsyncStorage.setItem(key, "true");
+    await writeOnboardingStatus(key, "true");
     setShowHomeTour(false);
   };
 
   const handleNextFromHome = async () => {
     const key = getOnboardingKey();
-    if (key) await AsyncStorage.setItem(key, "true");
+    await writeOnboardingStatus(key, "true");
     setShowHomeTour(false);
+
     navigation.navigate("Aquarium", { onboarding: true });
   };
 
@@ -72,32 +62,11 @@ export default function HomeScreen({ navigation, route }: any) {
       (async () => {
         setLoadingTanks(true);
 
-        let tanks = await getAllTanks();
-
         const fromSignup = route?.params?.onboarding === true;
 
-        if (!fromSignup && tanks.length === 0) {
-          await createTank("Default Tank");
-          tanks = await getAllTanks();
-        }
+        const tanks = await createDefaultTankIfNeeded(fromSignup);
 
-        const enriched = [];
-
-        for (const t of tanks) {
-          const key = `thinktank:snapshot:${t.tankId}`;
-          const raw = await AsyncStorage.getItem(key);
-
-          let stats = null;
-          if (raw) {
-            try {
-              stats = JSON.parse(raw);
-            } catch (e) {
-              console.warn("Failed to parse snapshot", e);
-            }
-          }
-
-          enriched.push({ ...t, stats });
-        }
+        const enriched = await enrichTanksWithSnapshots(tanks);
 
         if (alive) {
           setAllTanks(enriched);
@@ -132,11 +101,14 @@ export default function HomeScreen({ navigation, route }: any) {
 
   const handleCreateTank = async () => {
     setNameModalVisible(false);
-    const id = await createTank(tankNameDraft.trim() || "My Tank");
+
+    const cleanName = sanitizeTankName(tankNameDraft);
+    const id = await createTank(cleanName);
     setTankNameDraft("");
 
     const tanks = await getAllTanks();
-    setAllTanks(tanks);
+    const enriched = await enrichTanksWithSnapshots(tanks);
+    setAllTanks(enriched);
 
     navigation.navigate("Aquarium", { tankId: id });
   };
@@ -146,7 +118,6 @@ export default function HomeScreen({ navigation, route }: any) {
 
   return (
     <OceanBackground>
-
       <View
         style={{
           position: "absolute",
@@ -158,7 +129,10 @@ export default function HomeScreen({ navigation, route }: any) {
         <TouchableOpacity
           onPress={handleLogout}
           disabled={loggingOut}
-          style={[styles.logoutBtn, loggingOut && { opacity: 0.7 }]}
+          style={[
+            styles.logoutBtn,
+            loggingOut && { opacity: 0.7 },
+          ]}
           activeOpacity={0.9}
         >
           {loggingOut ? (
@@ -202,7 +176,7 @@ export default function HomeScreen({ navigation, route }: any) {
               onPress={() => setNameModalVisible(true)}
               style={styles.addBtn}
             >
-              <Ionicons name="add" size={18} color="#fff" />
+              <Ionicons name="add" size={18} color={colours.white} />
               <Text style={styles.addBtnText}>Add Tank</Text>
             </TouchableOpacity>
 
@@ -216,9 +190,7 @@ export default function HomeScreen({ navigation, route }: any) {
         </View>
 
         {allTanks.length > 0 && (
-          <Text style={[styles.sectionHeader, { marginBottom: 16 }]}>
-            Your Tanks
-          </Text>
+          <Text style={[styles.sectionHeader, { marginBottom: 16 }]}>Your Tanks</Text>
         )}
 
         {topTank ? (
@@ -234,18 +206,12 @@ export default function HomeScreen({ navigation, route }: any) {
             />
           </Card>
         ) : (
-          <Text style={{ color: "#94a3b8", marginTop: 20 }}>
+          <Text style={{ color: colours.textMutedSoft, marginTop: 20 }}>
             No tanks yet — add your first one!
           </Text>
         )}
 
-        <View
-          style={{
-            width: "100%",
-            marginTop: 32,
-            alignItems: "center",
-          }}
-        >
+        <View style={{ width: "100%", marginTop: 32, alignItems: "center" }}>
           {loadingTanks ? (
             <ActivityIndicator style={{ marginTop: 16 }} />
           ) : (
@@ -283,11 +249,12 @@ export default function HomeScreen({ navigation, route }: any) {
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Name your tank</Text>
+
             <TextInput
               value={tankNameDraft}
               onChangeText={setTankNameDraft}
               placeholder="e.g., Freshwater Paradise"
-              placeholderTextColor="#94a3b8"
+              placeholderTextColor={colours.textMutedSoft}
               style={styles.modalInput}
             />
 
@@ -296,20 +263,19 @@ export default function HomeScreen({ navigation, route }: any) {
                 style={styles.modalBtn}
                 onPress={() => setNameModalVisible(false)}
               >
-                <Text>Cancel</Text>
+                <Text style={{ color: colours.textSecondary }}>Cancel</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
                 style={[styles.modalBtn, styles.modalPrimary]}
                 onPress={handleCreateTank}
               >
-                <Text style={{ color: "#fff" }}>Create</Text>
+                <Text style={{ color: colours.white }}>Create</Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
-
 
       {showHomeTour && (
         <>
@@ -398,28 +364,28 @@ export default function HomeScreen({ navigation, route }: any) {
 
 const styles = StyleSheet.create({
   logoImg: { resizeMode: "contain" },
-  subtitle: { color: "#EAF6FF", marginTop: 4, fontSize: 16 },
-  addBtn: {  flexDirection: "row", backgroundColor: "#1A73E8", paddingHorizontal: 20, paddingVertical: 12, borderRadius: 999,  alignItems: "center", gap: 6, borderWidth: 1.5, borderColor: "#ffffff66", shadowColor: "#1A73E8", shadowOpacity: 0.5, shadowRadius: 8, elevation: 6 },
-  addBtnText: { color: "#fff", fontWeight: "800", fontSize: 15 },
-  exploreBtn: { paddingHorizontal: 22, paddingVertical: 12, borderRadius: 999, backgroundColor: "#FDDD1C", borderWidth: 1, borderColor: "#D9B800", shadowColor: "#FDDD1C", shadowOpacity: 0.4, shadowRadius: 8, elevation: 6 },
-  exploreText: { color: "#0B1D2F", fontWeight: "800", fontSize: 16 },
-  logoutBtn: { backgroundColor: "#F7FBFF", borderWidth: 1, borderColor: "#E5F2FF", paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999 },
+  subtitle: { color: colours.whiteSofter, marginTop: 4, fontSize: 16 },
+  addBtn: { flexDirection: "row", backgroundColor: colours.brandButtonBlue, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 999, alignItems: "center", gap: 6, borderWidth: 1.5, borderColor: colours.whiteOverlayStrong, shadowColor: colours.brandButtonBlue, shadowOpacity: 0.5, shadowRadius: 8, elevation: 6 },
+  addBtnText: { color: colours.white, fontWeight: "800", fontSize: 15 },
+  exploreBtn: { paddingHorizontal: 22, paddingVertical: 12, borderRadius: 999, backgroundColor: colours.brandYellow, borderWidth: 1, borderColor: colours.goldBorder, shadowColor: colours.brandYellow, shadowOpacity: 0.4, shadowRadius: 8, elevation: 6 },
+  exploreText: { color: colours.textOnDarkStrong, fontWeight: "800", fontSize: 16 },
+  logoutBtn: { backgroundColor: colours.whiteSoft, borderWidth: 1, borderColor: colours.whiteBorder, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999 },
   logoutText: { color: ocean.primary, fontWeight: "800" },
-  sectionHeader: { color: "#EAF6FF", fontSize: 18, fontWeight: "700", marginBottom: 6 },
-  modalBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "center", alignItems: "center", padding: 20 },
-  modalCard: { width: "100%", maxWidth: 380, backgroundColor: "#0B1D2F", borderRadius: 16, padding: 16, borderWidth: 1, borderColor: "#1E3A5F" },
-  modalTitle: { fontSize: 18, fontWeight: "700", color: "#fff", marginBottom: 10 },
-  modalInput: { borderWidth: 1, borderColor: "#1E3A5F", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 16, color: "#E2E8F0", backgroundColor: "#0f2a46", marginBottom: 12 },
+  sectionHeader: { color: colours.whiteSofter, fontSize: 18, fontWeight: "700", marginBottom: 6 },
+  modalBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: colours.modalScrim, justifyContent: "center", alignItems: "center", padding: 20 },
+  modalCard: { width: "100%", maxWidth: 380, backgroundColor: colours.deepNavy, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: colours.borderNavy },
+  modalTitle: { fontSize: 18, fontWeight: "700", color: colours.white, marginBottom: 10 },
+  modalInput: { borderWidth: 1, borderColor: colours.borderNavy, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 16, color: colours.textSecondary, backgroundColor: colours.deepNavyAlt, marginBottom: 12 },
   modalRow: { flexDirection: "row", justifyContent: "flex-end", gap: 8 },
-  modalBtn: { paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10, backgroundColor: "#0f2a46", borderWidth: 1, borderColor: "#1E3A5F" },
-  modalPrimary: { backgroundColor: "#1a4b7a" },
-  tourOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(4, 12, 24, 0.65)", justifyContent: "center", alignItems: "center", zIndex: 999 },
-  tourBubbleHome: { maxWidth: 340, width: "90%", backgroundColor: "rgba(15,42,70,0.95)", borderRadius: 16, paddingHorizontal: 16, paddingVertical: 14, borderWidth: 1, borderColor: "#38bdf8", alignItems: "flex-start" },
-  tourTitle: { color: "#E0F2FE", fontWeight: "800", fontSize: 16, marginBottom: 6 },
-  tourText: { color: "#EAF6FF", fontSize: 14, marginBottom: 12 },
+  modalBtn: { paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10, backgroundColor: colours.deepNavyAlt, borderWidth: 1, borderColor: colours.borderNavy },
+  modalPrimary: { backgroundColor: ocean.primary },
+  tourOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: colours.tourScrim, justifyContent: "center", alignItems: "center", zIndex: 999 },
+  tourBubbleHome: { backgroundColor: colours.tourBubble, borderRadius: 16, padding: 16, width: "92%", maxWidth: 360, borderWidth: 1, borderColor: colours.tourBorder, marginBottom: 20 },
+  tourTitle: { color: colours.tourTitle, fontWeight: "800", fontSize: 16, marginBottom: 6 },
+  tourText: { color: colours.tourText, fontSize: 14, marginBottom: 12 },
   tourButtonsRow: { flexDirection: "row", justifyContent: "flex-end", width: "100%", gap: 8 },
-  tourButtonSecondary: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: "#64748b" },
-  tourButtonSecondaryText: { color: "#E2E8F0", fontWeight: "600" },
-  tourButtonPrimary: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 999, backgroundColor: "#0ea5e9" },
-  tourButtonPrimaryText: { color: "#0B1D2F", fontWeight: "800" },
+  tourButtonSecondary: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: colours.tourButtonBorder },
+  tourButtonSecondaryText: { color: colours.tourButtonText, fontWeight: "600" },
+  tourButtonPrimary: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 999, backgroundColor: colours.tourButtonPrimary },
+  tourButtonPrimaryText: { color: colours.tourButtonPrimaryText, fontWeight: "800" },
 });

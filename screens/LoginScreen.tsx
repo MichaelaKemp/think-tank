@@ -3,9 +3,11 @@ import { useFocusEffect } from "@react-navigation/native";
 import * as ScreenOrientation from "expo-screen-orientation";
 import { getAuth, signInWithEmailAndPassword } from "firebase/auth";
 import React, { useCallback, useState } from "react";
-import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, TouchableOpacity, View, useWindowDimensions, } from "react-native";
-import { BubbleButton, Card, OceanBackground, ocean } from "../components/ui";
+import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions, } from "react-native";
+import { BubbleButton, Card, OceanBackground } from "../components/ui";
 import "../firebase";
+import { colours } from "../theme/colours";
+import { formatFirebaseError, normalizeEmail, validateEmail, validatePassword, } from "../utils/authUtils";
 
 export default function LoginScreen({ navigation }: any) {
   const [email, setEmail] = useState("");
@@ -25,19 +27,30 @@ export default function LoginScreen({ navigation }: any) {
   const onLogin = async () => {
     if (busy) return;
 
+    if (!validateEmail(email))
+      return Alert.alert("Invalid Email", "Please enter a valid email address.");
+
+    if (!validatePassword(password))
+      return Alert.alert("Invalid Password", "Use at least 6 characters.");
+
     const auth = getAuth();
 
     try {
       setBusy(true);
-      await signInWithEmailAndPassword(auth, email.trim(), password);
+
+      await signInWithEmailAndPassword(
+        auth,
+        normalizeEmail(email),
+        password
+      );
     } catch (e: any) {
-      Alert.alert("Login failed", e?.message ?? "Check your credentials.");
+      Alert.alert("Login failed", formatFirebaseError(e));
     } finally {
       setBusy(false);
     }
   };
 
-  return (
+ return (
     <OceanBackground>
       <KeyboardAvoidingView
         behavior={Platform.select({ ios: "padding", android: undefined })}
@@ -77,7 +90,7 @@ export default function LoginScreen({ navigation }: any) {
 
               <Text
                 style={{
-                  color: "#EAF6FF",
+                  color: colours.whiteSofter,
                   marginTop: 8,
                   fontSize: 16,
                   textAlign: "center",
@@ -87,7 +100,9 @@ export default function LoginScreen({ navigation }: any) {
                 }}
               >
                 Welcome back to{" "}
-                <Text style={{ fontWeight: "800" }}>Think Tank</Text>
+                <Text style={{ fontWeight: "800", color: colours.white }}>
+                  Think Tank
+                </Text>
               </Text>
             </View>
 
@@ -103,12 +118,12 @@ export default function LoginScreen({ navigation }: any) {
                     <Ionicons
                       name="mail"
                       size={18}
-                      color="#789"
+                      color={colours.iconMuted}
                       style={{ marginRight: 8 }}
                     />
                     <TextInput
                       placeholder="Email"
-                      placeholderTextColor="#6b7280"
+                      placeholderTextColor={colours.textMuted}
                       autoCapitalize="none"
                       keyboardType="email-address"
                       value={email}
@@ -121,12 +136,12 @@ export default function LoginScreen({ navigation }: any) {
                     <Ionicons
                       name="lock-closed"
                       size={18}
-                      color="#789"
+                      color={colours.iconMuted}
                       style={{ marginRight: 8 }}
                     />
                     <TextInput
                       placeholder="Password"
-                      placeholderTextColor="#6b7280"
+                      placeholderTextColor={colours.textMuted}
                       secureTextEntry={secure}
                       value={password}
                       onChangeText={setPassword}
@@ -136,7 +151,7 @@ export default function LoginScreen({ navigation }: any) {
                       <Ionicons
                         name={secure ? "eye" : "eye-off"}
                         size={18}
-                        color="#789"
+                        color={colours.iconMuted}
                       />
                     </TouchableOpacity>
                   </View>
@@ -144,7 +159,7 @@ export default function LoginScreen({ navigation }: any) {
                   <View style={{ marginTop: 8 }}>
                     {busy ? (
                       <View style={styles.loadingBtn}>
-                        <ActivityIndicator />
+                        <ActivityIndicator color={colours.deepNavy} />
                       </View>
                     ) : (
                       <BubbleButton title="Log In" onPress={onLogin} />
@@ -152,9 +167,14 @@ export default function LoginScreen({ navigation }: any) {
                   </View>
 
                   <TouchableOpacity onPress={() => navigation.navigate("Signup")}>
-                    <Text style={{ textAlign: "center", color: ocean.textDark }}>
+                    <Text style={{ textAlign: "center", color: colours.textSoftBlue }}>
                       No account?{" "}
-                      <Text style={{ color: ocean.primary, fontWeight: "800" }}>
+                      <Text
+                        style={{
+                          color: colours.primary,
+                          fontWeight: "800",
+                        }}
+                      >
                         Sign up
                       </Text>
                     </Text>
@@ -169,8 +189,8 @@ export default function LoginScreen({ navigation }: any) {
   );
 }
 
-const styles = {
-  inputRow: { flexDirection: "row" as const, alignItems: "center" as const, backgroundColor: "#F7FBFF", borderRadius: 14, paddingHorizontal: 12, borderWidth: 1, borderColor: "#E5F2FF" },
-  input: { flex: 1, paddingVertical: 10 },
-  loadingBtn: { paddingVertical: 14, borderRadius: 18, alignItems: "center" as const, justifyContent: "center" as const, backgroundColor: "#FFE9A8" },
-};
+const styles = StyleSheet.create({
+  inputRow: { flexDirection: "row" as const, alignItems: "center" as const, backgroundColor: colours.whiteSoft, borderRadius: 14, paddingHorizontal: 12, borderWidth: 1, borderColor: colours.whiteBorder },
+  input: { flex: 1, paddingVertical: 10, color: colours.textDark },
+  loadingBtn: { paddingVertical: 14, borderRadius: 18, alignItems: "center", justifyContent: "center", backgroundColor: colours.brandYellowSoft },
+});

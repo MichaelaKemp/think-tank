@@ -5,13 +5,14 @@ import * as FileSystem from 'expo-file-system';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { collection, getDocs } from 'firebase/firestore';
 import React, { useMemo, useRef, useState } from 'react';
-import { Alert, Animated, AppState, Easing, Image, Modal, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Animated, AppState, Easing, Image, Modal, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View, } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import ViewShot from 'react-native-view-shot';
 import FishTank from '../assets/images/Fish-Tank.jpeg';
 import { auth } from "../firebase";
 import { db } from '../firebase.js';
 import { getTank, saveTank } from "../services/tanks";
+import { colours } from "../theme/colours";
 
 //Try to load a local image first . If not found, fall back to imageURL in the db, then a default picture.
 const fishImages: Record<string, any> = {
@@ -55,7 +56,7 @@ type Species = {
   id: string;
   name: string;
   kind?: 'fish' | 'plant';
-  type?: string; 
+  type?: string;
   ph?: Range | number;
   temp?: Range;
   oxygenNeed?: Oxygen;
@@ -143,7 +144,7 @@ export default function AquariumScreen() {
   const [userTemp, setUserTemp] = useState(26);
   const [userOxy, setUserOxy] = useState(60);
   const [tempDraft, setTempDraft] = useState(userTemp);
-  const [oxyDraft,  setOxyDraft]  = useState(userOxy);
+  const [oxyDraft, setOxyDraft] = useState(userOxy);
   const [isSliding, setIsSliding] = useState(false);
 
   const [menuVisible, setMenuVisible] = useState(false);
@@ -202,10 +203,10 @@ export default function AquariumScreen() {
         ? (phValues.reduce((a, b) => a + b, 0) / phValues.length).toFixed(2)
         : "-";
 
-      return { speciesCount, env, temp, oxy, avgPhText };
-    }
+    return { speciesCount, env, temp, oxy, avgPhText };
+  }
 
-    async function saveTankSnapshot(
+  async function saveTankSnapshot(
     items: (Species | TankItem)[],
     env: WaterType,
     temp: number,
@@ -262,7 +263,7 @@ export default function AquariumScreen() {
   const saveTankDebounced = React.useRef(
     debounce(async (payload: any) => {
       try {
-       await saveToFirestore(
+        await saveToFirestore(
           stripUndefinedDeep({
             ...payload,
             stats,
@@ -302,18 +303,17 @@ export default function AquariumScreen() {
         await AsyncStorage.setItem('lastTankScreenshotUri', uri);
       } else {
         const dest = FileSystem.documentDirectory + 'tank-preview.jpg';
-        try { await FileSystem.deleteAsync(dest, { idempotent: true }); } catch {}
+        try { await FileSystem.deleteAsync(dest, { idempotent: true }); } catch { }
         await FileSystem.copyAsync({ from: result as string, to: dest });
         uri = dest;
         await AsyncStorage.setItem('lastTankScreenshotUri', uri);
       }
 
-  // Keep Firestore in sync for Home reloads
-    await saveToFirestore(stripUndefinedDeep({
-      ...buildPayload(tankItems),
-      previewUri: uri,
-      stats,
-    }));
+      await saveToFirestore(stripUndefinedDeep({
+        ...buildPayload(tankItems),
+        previewUri: uri,
+        stats,
+      }));
     } catch (e) {
       console.warn('Failed to capture tank', e);
     }
@@ -348,7 +348,7 @@ export default function AquariumScreen() {
     setIsSliding(false);
 
     // save immediately so settings persist even if app/backgrounds
-    saveNow(tankItems).catch(() => {});
+    saveNow(tankItems).catch(() => { });
 
     Animated.timing(slide, {
       toValue: 0,
@@ -393,23 +393,23 @@ export default function AquariumScreen() {
       temp: userTemp,
       oxy: userOxy,
       backgroundKey: tankBackgrounds[bgIndex]?.key,
-  },
-  fish: serializeItems(items.filter(t => t.kind === 'fish')),
-  plants: serializeItems(items.filter(t => t.kind === 'plant')),
-  stats,
-  // To avoid array-merge bugs
-  items: itemsById(items),
-});
+    },
+    fish: serializeItems(items.filter(t => t.kind === 'fish')),
+    plants: serializeItems(items.filter(t => t.kind === 'plant')),
+    stats,
+    // To avoid array-merge bugs
+    items: itemsById(items),
+  });
 
-const buildPayload = (items: TankItem[]) => stripUndefinedDeep(buildPayloadRaw(items));
+  const buildPayload = (items: TankItem[]) => stripUndefinedDeep(buildPayloadRaw(items));
 
 
   const saveNow = async (items: TankItem[]) => {
     try {
       await saveToFirestore({
-      ...buildPayload(tankItems),
-      stats: calculateTankStats(tankItems),
-    });
+        ...buildPayload(tankItems),
+        stats: calculateTankStats(tankItems),
+      });
     } catch (e) {
       console.warn('saveNow failed', e);
     }
@@ -422,7 +422,7 @@ const buildPayload = (items: TankItem[]) => stripUndefinedDeep(buildPayloadRaw(i
         try {
           await saveNow(tankItems);
           await saveTankScreenshot();
-        } catch {}
+        } catch { }
       }
     });
     return () => sub.remove();
@@ -459,7 +459,7 @@ const buildPayload = (items: TankItem[]) => stripUndefinedDeep(buildPayloadRaw(i
           try {
             await saveNow(tankItems);
             await saveTankScreenshot();
-          } catch {}
+          } catch { }
         }
         skipScreenshotOnBlurRef.current = false; // reset
       };
@@ -478,10 +478,10 @@ const buildPayload = (items: TankItem[]) => stripUndefinedDeep(buildPayloadRaw(i
         return;
       }
       // Native (Android/iOS): lock to landscape
-      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => {});
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => { });
 
       return () => {
-        ScreenOrientation.unlockAsync().catch(() => {});
+        ScreenOrientation.unlockAsync().catch(() => { });
       };
     }, [])
   );
@@ -560,7 +560,7 @@ const buildPayload = (items: TankItem[]) => stripUndefinedDeep(buildPayloadRaw(i
       Alert.alert(
         `Switch to ${next === 'freshwater' ? 'Freshwater' : 'Saltwater'}?`,
         `This action will affect ${affected.length} item(s):\n\n` +
-          affected.map(it => `• ${nameOf(it)} (${it.name})`).join('\n'),
+        affected.map(it => `• ${nameOf(it)} (${it.name})`).join('\n'),
         [
           { text: 'Cancel', style: 'cancel' },
           { text: 'Switch', onPress: () => setWaterEnv(next) },
@@ -727,7 +727,7 @@ const buildPayload = (items: TankItem[]) => stripUndefinedDeep(buildPayloadRaw(i
     const newItem: TankItem = {
       ...(base as Species),
       id: `${base.id}::${instanceId}`,
-      speciesId: base.id, 
+      speciesId: base.id,
       kind: base.kind ?? 'fish',
       instanceId,
       x,
@@ -766,7 +766,8 @@ const buildPayload = (items: TankItem[]) => stripUndefinedDeep(buildPayloadRaw(i
   const deleteItem = (id: string) => {
     Alert.alert('Delete', 'Remove this from your tank?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => {
+      {
+        text: 'Delete', style: 'destructive', onPress: () => {
           setTankItems(prev => {
             const next = prev.filter(t => t.instanceId !== id);
             saveNow(next);
@@ -884,7 +885,7 @@ const buildPayload = (items: TankItem[]) => stripUndefinedDeep(buildPayloadRaw(i
         <View
           style={{
             ...StyleSheet.absoluteFillObject,
-            backgroundColor: "rgba(4,12,24,0.65)",
+            backgroundColor: colours.tourOverlay,
             justifyContent: "flex-end",
             alignItems: "center",
             paddingBottom: 40,
@@ -895,16 +896,16 @@ const buildPayload = (items: TankItem[]) => stripUndefinedDeep(buildPayloadRaw(i
             style={{
               width: "92%",
               maxWidth: 360,
-              backgroundColor: "rgba(15,42,70,0.97)",
+              backgroundColor: colours.tourBubble,
               borderRadius: 16,
               borderWidth: 1,
-              borderColor: "#38bdf8",
+              borderColor: colours.tourBorder,
               padding: 16,
             }}
           >
             <Text
               style={{
-                color: "#E0F2FE",
+                color: colours.tourTitle,
                 fontSize: 16,
                 fontWeight: "800",
                 marginBottom: 6,
@@ -915,7 +916,7 @@ const buildPayload = (items: TankItem[]) => stripUndefinedDeep(buildPayloadRaw(i
 
             <Text
               style={{
-                color: "#EAF6FF",
+                color: colours.tourText,
                 fontSize: 14,
                 lineHeight: 18,
                 marginBottom: 12,
@@ -938,10 +939,10 @@ const buildPayload = (items: TankItem[]) => stripUndefinedDeep(buildPayloadRaw(i
                   paddingVertical: 8,
                   borderRadius: 999,
                   borderWidth: 1,
-                  borderColor: "#64748b",
+                  borderColor: colours.tourButtonBorder,
                 }}
               >
-                <Text style={{ color: "#E2E8F0", fontWeight: "600" }}>Skip</Text>
+                <Text style={{ color: colours.tourButtonText, fontWeight: "600" }}>Skip</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -959,10 +960,10 @@ const buildPayload = (items: TankItem[]) => stripUndefinedDeep(buildPayloadRaw(i
                   paddingHorizontal: 16,
                   paddingVertical: 8,
                   borderRadius: 999,
-                  backgroundColor: "#0ea5e9",
+                  backgroundColor: colours.tourButtonPrimary,
                 }}
               >
-                <Text style={{ color: "#0B1D2F", fontWeight: "800" }}>
+                <Text style={{ color: colours.tourButtonPrimaryText, fontWeight: "800" }}>
                   {aquariumStep < 3 ? "Next" : "Continue"}
                 </Text>
               </TouchableOpacity>
@@ -974,7 +975,7 @@ const buildPayload = (items: TankItem[]) => stripUndefinedDeep(buildPayloadRaw(i
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#102B44' }} edges={['top', 'right']} >
+    <SafeAreaView style={{ flex: 1, backgroundColor: colours.deepBlue }} edges={['top', 'right']} >
       <TouchableOpacity
         onPress={async () => {
           skipScreenshotOnBlurRef.current = true; // Manually save here
@@ -982,10 +983,21 @@ const buildPayload = (items: TankItem[]) => stripUndefinedDeep(buildPayloadRaw(i
           await saveTankScreenshot();
           navigation.canGoBack() ? navigation.goBack() : (navigation as any).navigate('Home');
         }}
-        style={{ position: 'absolute', left: 12, top: Math.max(insets.top, ANDROID_SAFE) + 12, zIndex: 200, backgroundColor: 'rgba(11,29,47,0.85)', borderWidth: 1, borderColor: '#1E3A5F', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8 }}
+        style={{
+          position: 'absolute',
+          left: 12,
+          top: Math.max(insets.top, ANDROID_SAFE) + 12,
+          zIndex: 200,
+          backgroundColor: colours.backChipBg,
+          borderWidth: 1,
+          borderColor: colours.borderNavy,
+          borderRadius: 999,
+          paddingHorizontal: 12,
+          paddingVertical: 8
+        }}
         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
       >
-        <Text style={{ color: '#E2E8F0', fontWeight: '700', fontSize: 16 }}>‹ Back</Text>
+        <Text style={{ color: colours.textSecondary, fontWeight: '700', fontSize: 16 }}>‹ Back</Text>
       </TouchableOpacity>
 
       <View style={styles.root}>
@@ -1010,8 +1022,20 @@ const buildPayload = (items: TankItem[]) => stripUndefinedDeep(buildPayloadRaw(i
                   {(() => {
                     const comp = simpleCompatAgainstTank(sp, tankItems);
                     return (
-                      <View style={[styles.compPill, { borderColor: comp.color }]}>
-                        <Text style={[styles.compText, { color: comp.color }]}>Compat {comp.label}</Text>
+                      <View
+                        style={[
+                          styles.compPill,
+                          {
+                            borderColor: comp.color,
+                            backgroundColor: comp.color === colours.compatGood
+                              ? colours.compatGoodBg
+                              : colours.compatBadBg,
+                          },
+                        ]}
+                      >
+                        <Text style={[styles.compText, { color: comp.color }]}>
+                          Compat {comp.label}
+                        </Text>
                       </View>
                     );
                   })()}
@@ -1031,68 +1055,68 @@ const buildPayload = (items: TankItem[]) => stripUndefinedDeep(buildPayloadRaw(i
               />
             </View>
 
-          {tankBackgrounds.length > 1 && (
-            <>
-              <TouchableOpacity
-                accessibilityLabel="Previous background"
-                onPress={goPrevBg}
-                style={[styles.carouselArrow, styles.carouselArrowLeft]}
-                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-              >
-                <Text style={styles.carouselArrowText}>‹</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                accessibilityLabel="Next background"
-                onPress={goNextBg}
-                style={[styles.carouselArrow, styles.carouselArrowRight]}
-                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-              >
-                <Text style={styles.carouselArrowText}>›</Text>
-              </TouchableOpacity>
-            </>
-          )}
-
-          {tankBackgrounds[bgIndex]?.label && (
-            <View style={styles.bgCaption}>
-              <Text style={styles.bgCaptionText}>{tankBackgrounds[bgIndex].label}</Text>
-            </View>
-          )}
-
-          {tankItems.length === 0 ? (
-            <View style={styles.center}>
-              <Text style={styles.muted}>Long-press a fish/plant, drag, and drop it into the tank.</Text>
-            </View>
-          ) : (
-            tankItems.map(item => {
-              const isMismatch =
-                ((item.type || 'freshwater').toLowerCase() as WaterType) !== waterEnv;
-              return (
-                <Pressable
-                  key={item.instanceId}
-                  onPress={() => onTankItemPress(item)}
-                  onLongPress={e => startDragExisting(item, e.nativeEvent.pageX, e.nativeEvent.pageY)}
-                  delayLongPress={180}
-                  style={[
-                    styles.fishWrap,
-                    { left: item.x, top: item.y, width: FISH_W, height: FISH_H },
-                    isMismatch && styles.mismatchWrap,
-                  ]}
+            {tankBackgrounds.length > 1 && (
+              <>
+                <TouchableOpacity
+                  accessibilityLabel="Previous background"
+                  onPress={goPrevBg}
+                  style={[styles.carouselArrow, styles.carouselArrowLeft]}
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                 >
-                  <Image source={getImageSource(item)} style={styles.fish} />
-                  {(item.kind === 'fish') && (item.nickname || item.name) && (
-                    <View style={styles.nameTag}>
-                      <Text numberOfLines={1} style={styles.nameTagText}>
-                        {item.nickname || item.name}
-                      </Text>
-                    </View>
-                  )}
-                </Pressable>
-              );
-            })
-          )}
-        </View>
-      </ViewShot>
+                  <Text style={styles.carouselArrowText}>‹</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  accessibilityLabel="Next background"
+                  onPress={goNextBg}
+                  style={[styles.carouselArrow, styles.carouselArrowRight]}
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                >
+                  <Text style={styles.carouselArrowText}>›</Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            {tankBackgrounds[bgIndex]?.label && (
+              <View style={styles.bgCaption}>
+                <Text style={styles.bgCaptionText}>{tankBackgrounds[bgIndex].label}</Text>
+              </View>
+            )}
+
+            {tankItems.length === 0 ? (
+              <View style={styles.center}>
+                <Text style={styles.muted}>Long-press a fish/plant, drag, and drop it into the tank.</Text>
+              </View>
+            ) : (
+              tankItems.map(item => {
+                const isMismatch =
+                  ((item.type || 'freshwater').toLowerCase() as WaterType) !== waterEnv;
+                return (
+                  <Pressable
+                    key={item.instanceId}
+                    onPress={() => onTankItemPress(item)}
+                    onLongPress={e => startDragExisting(item, e.nativeEvent.pageX, e.nativeEvent.pageY)}
+                    delayLongPress={180}
+                    style={[
+                      styles.fishWrap,
+                      { left: item.x, top: item.y, width: FISH_W, height: FISH_H },
+                      isMismatch && styles.mismatchWrap,
+                    ]}
+                  >
+                    <Image source={getImageSource(item)} style={styles.fish} />
+                    {(item.kind === 'fish') && (item.nickname || item.name) && (
+                      <View style={styles.nameTag}>
+                        <Text numberOfLines={1} style={styles.nameTagText}>
+                          {item.nickname || item.name}
+                        </Text>
+                      </View>
+                    )}
+                  </Pressable>
+                );
+              })
+            )}
+          </View>
+        </ViewShot>
 
         <TouchableOpacity
           onPress={openMenu}
@@ -1113,14 +1137,14 @@ const buildPayload = (items: TankItem[]) => stripUndefinedDeep(buildPayloadRaw(i
             <View style={styles.menuHeader}>
               <Text style={styles.menuTitle}>Tank Controls</Text>
               <TouchableOpacity onPress={closeMenu} accessibilityLabel="Close controls">
-                <Text style={{ color: '#C7D2FE', fontSize: 18, padding: 6 }}>✕</Text>
+                <Text style={{ color: colours.subtitleSoftBlue, fontSize: 18, padding: 6 }}>✕</Text>
               </TouchableOpacity>
             </View>
 
             <ScrollView contentContainerStyle={{ paddingBottom: 24 }} scrollEnabled={!isSliding}>
               <Text style={styles.h1}>Environment</Text>
               <View style={styles.segment}>
-                {(['freshwater','saltwater'] as WaterType[]).map((opt) => (
+                {(['freshwater', 'saltwater'] as WaterType[]).map((opt) => (
                   <TouchableOpacity
                     key={opt}
                     onPress={() => switchEnv(opt)}
@@ -1146,14 +1170,6 @@ const buildPayload = (items: TankItem[]) => stripUndefinedDeep(buildPayloadRaw(i
 
               <View style={styles.divider} />
 
-              {/* ------- Temperature slider -------
-                 How it works:
-                 - We find a "recommended" range from the fish in the tank.
-                   (max of all mins, min of all maxes). If that range flips
-                   (min > max), we show "Conflict".
-                 - While dragging: we show the draft value.
-                 - When you close the drawer: we commit to userTemp.
-              */}
               <Text style={styles.controlLabel}>Temperature: {tempDraft.toFixed(1)}°C</Text>
               <View style={styles.sliderWrap} pointerEvents="box-none">
                 <Slider
@@ -1169,12 +1185,6 @@ const buildPayload = (items: TankItem[]) => stripUndefinedDeep(buildPayloadRaw(i
               </View>
               {renderTempHint(tankItems, tempDraft)}
 
-              {/* ------- Oxygen slider -------
-                 Turn low/medium/high needs into % ranges:
-                 low 30–55, medium 45–75, high 65–90.
-                 These ranges overlap on purpose so you don't
-                 see "wrong" all the time.
-              */}
               <Text style={[styles.controlLabel, { marginTop: 16 }]}>
                 Oxygen / Aeration: {Math.round(oxyDraft)}%
               </Text>
@@ -1259,19 +1269,19 @@ const buildPayload = (items: TankItem[]) => stripUndefinedDeep(buildPayloadRaw(i
               value={nameDraft}
               onChangeText={setNameDraft}
               placeholder="e.g., Bubbles"
-              placeholderTextColor="#94a3b8"
+              placeholderTextColor={colours.textMutedSoft}
               autoFocus
               style={styles.modalInput}
             />
             <View style={styles.modalRow}>
               <TouchableOpacity style={styles.modalBtn} onPress={() => { setNameModalVisible(false); setPendingNew(null); }}>
-                <Text>Cancel</Text>
+                <Text style={{ color: colours.textSecondary }}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.modalBtn, styles.modalPrimary]}
                 onPress={nameModalMode === 'create' ? confirmCreateItem : confirmRename}
               >
-                <Text style={{ color: '#fff' }}>
+                <Text style={{ color: colours.white }}>
                   {nameModalMode === 'create' ? 'Add to tank' : 'Save'}
                 </Text>
               </TouchableOpacity>
@@ -1347,21 +1357,25 @@ function isExplicitlyIncompatible(a: Species, b: Species) {
 }
 
 function simpleCompatAgainstTank(candidate: Species, tank: (Species | TankItem)[]) {
-  if (!tank || tank.length === 0) return { label: 'Good', color: '#86EFAC' };
+  const GOOD_COLOR = colours.compatGood;
+  const BAD_COLOR = colours.compatBad;
 
-  // e.g. betta + betta = no
+  if (!tank || tank.length === 0) {
+    return { label: 'Good', color: GOOD_COLOR };
+  }
+
   const candKey = canonicalId(candidate);
   if (SELF_AVOID.has(candKey) && tank.some(t => canonicalId(t) === candKey)) {
-    return { label: 'Avoid', color: '#FCA5A5' };
+    return { label: 'Avoid', color: BAD_COLOR };
   }
 
-  // any hard NO vs anything already in the tank?
-  for (const t of tank) if (isExplicitlyIncompatible(candidate, t)) {
-    return { label: 'Avoid', color: '#FCA5A5' };
+  for (const t of tank) {
+    if (isExplicitlyIncompatible(candidate, t as Species)) {
+      return { label: 'Avoid', color: BAD_COLOR };
+    }
   }
 
-  // otherwise fine
-  return { label: 'Good', color: '#86EFAC' };
+  return { label: 'Good', color: GOOD_COLOR };
 }
 
 // build conflicts (duplicates, explicit incompat, self-avoid like bettas)
@@ -1415,7 +1429,7 @@ function summarizeTank(items: (Species | TankItem)[]) {
   const oxy = items.map(s => s.oxygenNeed).filter(Boolean) as Oxygen[];
 
   const tempAvg = temps.length ? (temps.reduce((a, b) => a + b, 0) / temps.length).toFixed(1) : '—';
-  const phAvg   = phMids.length ? (phMids.reduce((a, b) => a + b, 0) / phMids.length).toFixed(2) : 'No pH data';
+  const phAvg = phMids.length ? (phMids.reduce((a, b) => a + b, 0) / phMids.length).toFixed(2) : 'No pH data';
 
   // rough oxygen summary
   let oxygenStatus: 'low' | 'medium' | 'high' | 'conflict' = 'medium';
@@ -1499,12 +1513,12 @@ function renderOxyHint(items: (Species | any)[], oxy: number) {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, flexDirection: 'row', backgroundColor: '#102B44' },
+  root: { flex: 1, flexDirection: 'row', backgroundColor: colours.deepBlue },
   leftRail: {
     width: LEFT_BAR_W,
-    backgroundColor: '#0B1D2F',
+    backgroundColor: colours.deepNavy,
     borderRightWidth: 1,
-    borderRightColor: '#1E3A5F',
+    borderRightColor: colours.borderNavy,
   },
   leftBar: {
     flex: 0,
@@ -1524,7 +1538,7 @@ const styles = StyleSheet.create({
     resizeMode: 'contain'
   },
   thumbLabel: {
-    color: '#C7D2FE',
+    color: colours.subtitleSoftBlue,
     fontSize: 10,
     marginTop: 4,
     width: LEFT_BAR_W - 16,
@@ -1551,27 +1565,27 @@ const styles = StyleSheet.create({
     height: 40,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: '#1E3A5F',
-    backgroundColor: 'rgba(11,29,47,0.85)',
+    borderColor: colours.borderNavy,
+    backgroundColor: colours.backChipBg,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 5,
   },
   carouselArrowLeft: { left: 12 },
   carouselArrowRight: { right: 12 },
-  carouselArrowText: { color: '#C7D2FE', fontSize: 22, fontWeight: '700' },
+  carouselArrowText: { color: colours.subtitleSoftBlue, fontSize: 22, fontWeight: '700' },
   bgCaption: {
     position: 'absolute',
     bottom: 10,
     left: 16,
     paddingHorizontal: 8,
     paddingVertical: 4,
-    backgroundColor: 'rgba(11,29,47,0.6)',
+    backgroundColor: colours.backChipBg,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#1E3A5F',
+    borderColor: colours.borderNavy,
   },
-  bgCaptionText: { color: '#E2E8F0', fontSize: 12 },
+  bgCaptionText: { color: colours.textSecondary, fontSize: 12 },
 
   fishWrap: {
     position: 'absolute',
@@ -1591,8 +1605,8 @@ const styles = StyleSheet.create({
   },
   nameTagText: {
     fontSize: 12,
-    color: '#E2E8F0',
-    backgroundColor: 'rgba(16,43,68,0.7)',
+    color: colours.textSecondary,
+    backgroundColor: colours.deepNavyAlt,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 8,
@@ -1602,9 +1616,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: 220,
     borderRadius: 12,
-    backgroundColor: '#0B1D2F',
+    backgroundColor: colours.deepNavy,
     borderWidth: 1,
-    borderColor: '#1E3A5F',
+    borderColor: colours.borderNavy,
     paddingHorizontal: RHYTHM,
     paddingTop: RHYTHM,
     paddingBottom: RHYTHM,
@@ -1612,7 +1626,7 @@ const styles = StyleSheet.create({
   },
   bubbleTitle: {
     fontWeight: '700',
-    color: '#C7D2FE',
+    color: colours.subtitleSoftBlue,
     marginBottom: RHYTHM / 1.5,
   },
   bubbleRow: {
@@ -1621,22 +1635,22 @@ const styles = StyleSheet.create({
     marginBottom: RHYTHM,
   },
   deleteBtn: {
-    backgroundColor: '#2a1111',
-    borderColor: '#5f1e1e',
+    backgroundColor: colours.incompatibleBg,
+    borderColor: colours.incompatibleBorder,
     alignSelf: 'stretch',
     marginTop: 0,
     paddingVertical: 10,
     borderRadius: 8,
   },
   bubbleBtnText: {
-    color: '#E2E8F0',
+    color: colours.textSecondary,
     fontWeight: '600',
     textAlign: 'center',
   },
   bubbleBtn: {
-    backgroundColor: '#0f2a46',
+    backgroundColor: colours.deepNavyAlt,
     borderWidth: 1,
-    borderColor: '#1E3A5F',
+    borderColor: colours.borderNavy,
     borderRadius: 8,
     paddingVertical: 8,
     paddingHorizontal: 10,
@@ -1645,7 +1659,7 @@ const styles = StyleSheet.create({
   },
   mismatchWrap: {
     borderWidth: 2,
-    borderColor: '#ef4444',
+    borderColor: colours.incompatibleBorder,
     borderRadius: 12,
   },
   dragOverlay: {
@@ -1663,24 +1677,24 @@ const styles = StyleSheet.create({
   },
   menuButton: {
     position: 'absolute',
-    backgroundColor: '#0B1D2F',
+    backgroundColor: colours.deepNavy,
     borderRadius: 9999,
     paddingVertical: 8,
     paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#1E3A5F',
+    borderColor: colours.borderNavy,
     zIndex: 50,
     elevation: 8,
   },
   menuIcon: {
-    color: 'white',
+    color: colours.white,
     fontSize: 16,
     marginRight: 8
-   },
+  },
   menuText: {
-    color: 'white',
+    color: colours.white,
     fontWeight: '600'
   },
   modalFill: {
@@ -1692,7 +1706,7 @@ const styles = StyleSheet.create({
   },
   scrimBg: {
     flex: 1,
-    backgroundColor: 'black'
+    backgroundColor: colours.modalScrim
   },
   menu: {
     position: 'absolute',
@@ -1700,10 +1714,10 @@ const styles = StyleSheet.create({
     bottom: 0,
     right: 0,
     width: MENU_W,
-    backgroundColor: '#0B1D2F',
+    backgroundColor: colours.deepNavy,
     padding: 16,
     borderLeftWidth: 1,
-    borderLeftColor: '#1E3A5F',
+    borderLeftColor: colours.borderNavy,
   },
   menuHeader: {
     flexDirection: 'row',
@@ -1712,28 +1726,28 @@ const styles = StyleSheet.create({
     marginBottom: 8
   },
   menuTitle: {
-    color: 'white',
+    color: colours.white,
     fontSize: 16,
     fontWeight: '700'
   },
   h1: {
     fontSize: 18,
-    color: 'white',
+    color: colours.white,
     marginTop: 8,
     marginBottom: 8,
     fontWeight: '700'
   },
   stat: {
-    color: '#C7D2FE',
+    color: colours.subtitleSoftBlue,
     marginBottom: 6
   },
   divider: {
     height: 1,
-    backgroundColor: '#1E3A5F',
+    backgroundColor: colours.borderNavy,
     marginVertical: 12
   },
   controlLabel: {
-    color: 'white',
+    color: colours.white,
     marginBottom: 4,
     fontWeight: '600'
   },
@@ -1745,14 +1759,14 @@ const styles = StyleSheet.create({
     height: 40
   },
   hint: {
-    color: '#C7D2FE',
+    color: colours.subtitleSoftBlue,
     marginTop: 4
   },
   ok: {
-    color: '#86EFAC'
+    color: colours.compatGood,
   },
   warn: {
-    color: '#FCA5A5'
+    color: colours.compatBad,
   },
   center: {
     flex: 1,
@@ -1760,7 +1774,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center'
   },
   muted: {
-    color: '#94A3B8'
+    color: colours.textMutedSoft
   },
   chipsRow: {
     marginTop: 4,
@@ -1780,33 +1794,33 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '600'
   },
-  segment: { 
-    flexDirection: 'row', 
-    gap: 8, 
-    marginBottom: 8 
+  segment: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 8
   },
   segBtn: {
     flex: 1,
     borderWidth: 1,
-    borderColor: '#1E3A5F',
+    borderColor: colours.borderNavy,
     borderRadius: 10,
     paddingVertical: 10,
     alignItems: 'center',
-    backgroundColor: '#0f2a46',
+    backgroundColor: colours.deepNavyAlt,
   },
-  segBtnActive: { 
-    backgroundColor: '#1a4b7a' 
+  segBtnActive: {
+    backgroundColor: colours.brandButtonBlue
   },
-  segBtnText: { 
-    color: '#C7D2FE', fontWeight: '600' 
+  segBtnText: {
+    color: colours.subtitleSoftBlue, fontWeight: '600'
   },
-  segBtnTextActive: { 
-    color: '#fff' 
+  segBtnTextActive: {
+    color: colours.white
   },
   modalBackdrop: {
     position: 'absolute',
     left: 0, right: 0, top: 0, bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: colours.modalScrim,
     alignItems: 'center',
     justifyContent: 'center',
     padding: 20,
@@ -1814,43 +1828,43 @@ const styles = StyleSheet.create({
   modalCard: {
     width: '100%',
     maxWidth: 380,
-    backgroundColor: '#0B1D2F',
+    backgroundColor: colours.deepNavy,
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#1E3A5F',
+    borderColor: colours.borderNavy,
   },
-  modalTitle: { 
-    fontSize: 18, 
-    fontWeight: '700', 
-    marginBottom: 10, 
-    color: '#fff' 
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 10,
+    color: colours.white
   },
   modalInput: {
     borderWidth: 1,
-    borderColor: '#1E3A5F',
+    borderColor: colours.borderNavy,
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 16,
     marginBottom: 12,
-    color: '#E2E8F0',
-    backgroundColor: '#0f2a46',
+    color: colours.textSecondary,
+    backgroundColor: colours.deepNavyAlt,
   },
-  modalRow: { 
-    flexDirection: 'row', 
-    justifyContent: 'flex-end', 
-    gap: 8 
+  modalRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8
   },
   modalBtn: {
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: 10,
-    backgroundColor: '#0f2a46',
+    backgroundColor: colours.deepNavyAlt,
     borderWidth: 1,
-    borderColor: '#1E3A5F',
+    borderColor: colours.borderNavy,
   },
-  modalPrimary: { 
-    backgroundColor: '#1a4b7a' 
+  modalPrimary: {
+    backgroundColor: colours.brandButtonBlue
   },
 });
