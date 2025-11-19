@@ -43,7 +43,7 @@ The app focuses on a clean and responsive layout that helps users visualise how 
 16. [Performance & DX](#performance--dx)
 17. [Tools & Libraries](#tools--libraries)
 18. [Licence](#licence)
-29. [Resources & Credits](#resources--credits)
+29. [Acknowledgements](#acknowledgements)
 
 ---
 
@@ -314,8 +314,13 @@ It may be viewed, referenced, or demonstrated, but not redistributed or used com
 
 ---
 
-## Resources & Credits
-- Expo Docs • React Native Docs • Firebase Docs  
-- Community threads and examples from GitHub and Stack Overflow
+## Acknowledgements
+
+- **Expo & React Native Documentation** — for providing clear guidelines, examples, and platform support throughout the development of the app.
+- **Firebase Documentation** — for helpful resources on Authentication and Firestore, which streamlined the data modelling and tank-saving workflow.
+- **React Native Community** — for open-source libraries, discussions, and troubleshooting support that improved the builder interaction and gesture features.
+- **OpenAI / ChatGPT** — for assistance with debugging, refactoring large components and helping optimise the aquarium builder logic during development.
+- **Academic resources from Open Window** — for informing UX decisions, design planning, and testing methodologies.
+- **Open-source contributors** behind libraries such as `react-native-view-shot`, `react-native-gesture-handler`, and `react-native-reanimated`, which made the drag-and-drop interaction and snapshot system possible.
 
 © Michaela Kemp, 2025. All rights reserved.
